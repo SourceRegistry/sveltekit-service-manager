@@ -1,6 +1,6 @@
 {
 	"name": "@sourceregistry/sveltekit-service-manager",
-	"version": "1.0.1",
+	"version": "0.0.1",
 	"description": "Typed Server-Sent Events (SSE) integration for **SvelteKit** featuring strongly typed client-server communication, custom event channels, and first-class TypeScript support.",
 	"main": "./dist/index.js",
 	"module": "./dist/index.js",
@@ -14,7 +14,7 @@
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"test": "vitest run",
 		"test:coverage": "vitest run --coverage",
-		"docs:build": "typedoc src/lib/client/index.ts src/lib/server/index.ts src/lib/protocol.ts src/lib/index.ts --out generated/docs --name \"sveltekit-service-manager\" --theme default --excludePrivate --excludeProtected --readme docs/index.md --includeVersion --entryPointStrategy expand"
+		"docs:build": "typedoc src/lib/client/index.ts src/lib/server/index.ts src/lib/protocol.ts src/lib/index.ts --out generated/docs --name \"sveltekit-service-manager\" --theme default --excludePrivate --excludeProtected --includeVersion --entryPointStrategy expand"
 	},
 	"files": [
 		"dist",
@@ -72,17 +72,12 @@
 		"url": "git+https://github.com/SourceRegistry/sveltekit-service-manager.git"
 	},
 	"keywords": [
-		"server-side-events",
-		"sse",
-		"sse-server",
-		"sse-client",
-		"svelte-events",
-		"svelte-service-manager",
-		"sveltekit-events",
-		"sveltekit-service-manager",
-		"server-sent-event",
+		"services",
+		"service",
+		"microservice",
+		"microservices",
 		"service-manager",
-		"event"
+		"sveltekit-service-manager"
 	],
 	"author": "A.P.A. Slaa (a.p.a.slaa@projectsource.nl)",
 	"license": "Apache-2.0",

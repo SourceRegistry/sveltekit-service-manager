@@ -5,15 +5,16 @@ import {
     ServerResponse,
     type OutgoingHttpHeaders,
     type OutgoingHttpHeader,
-    Server,
-    type RequestListener
+    type Server,
+    type RequestListener,
+    STATUS_CODES
 } from 'http';
 import type { AddressInfo } from 'net';
 import type { Duplex } from 'node:stream';
 import type { ServiceRequestEvent } from '../index.js';
 
 /**
- * A deferred promise implementation that allows external resolution/rejection
+ * A small deferred promise helper that can be resolved/rejected externally.
  */
 class Deferred<T = void> {
     public readonly promise: Promise<T>;
@@ -25,14 +26,13 @@ class Deferred<T = void> {
 
     constructor() {
         this.promise = new Promise<T>((resolve, reject) => {
-            this.resolve = (value: T | PromiseLike<T>) => {
+            this.resolve = (value) => {
                 if (!this._isResolved && !this._isRejected) {
                     this._isResolved = true;
                     resolve(value);
                 }
             };
-
-            this.reject = (reason?: any) => {
+            this.reject = (reason) => {
                 if (!this._isResolved && !this._isRejected) {
                     this._isRejected = true;
                     reject(reason);
@@ -41,35 +41,26 @@ class Deferred<T = void> {
         });
     }
 
-    /**
-     * Returns true if the promise has been resolved
-     */
+    /** True if resolved. */
     get isResolved(): boolean {
         return this._isResolved;
     }
 
-    /**
-     * Returns true if the promise has been rejected
-     */
+    /** True if rejected. */
     get isRejected(): boolean {
         return this._isRejected;
     }
 
-    /**
-     * Returns true if the promise is still pending
-     */
+    /** True if neither resolved nor rejected. */
     get isPending(): boolean {
         return !this._isResolved && !this._isRejected;
     }
 
-    /**
-     * Returns true if the promise has been settled (resolved or rejected)
-     */
-    get isSettled(): boolean {
-        return this._isResolved || this._isRejected;
-    }
-
-    step<TResult2 = never>(): [onfulfilled?: ((value: T) => T | PromiseLike<T>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null]{
+    /** Convenience to resolve/reject from promise chains. */
+    step<TResult2 = never>(): [
+        onfulfilled?: ((value: T) => T | PromiseLike<T>) | undefined | null,
+        onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null
+    ] {
         return [
             (r) => {
                 this.resolve(r);
@@ -79,24 +70,38 @@ class Deferred<T = void> {
                 this.reject(reason);
                 return reason;
             }
-        ]
+        ];
     }
-
 }
 
-
-// Mock socket for compatibility
+/**
+ * Minimal socket stub used to satisfy Node http classes without real network IO.
+ *
+ * Express and related middleware sometimes read:
+ * - socket.remoteAddress / localAddress
+ * - socket.encrypted (https)
+ * - socket.destroyed
+ */
 class MockSocket extends EventEmitter {
-    readable = true;
-    writable = true;
-    destroyed = false;
+    public readable = true;
+    public writable = true;
+    public destroyed = false;
+
+    public remoteAddress: string = '127.0.0.1';
+    public remotePort: number = 0;
+    public localAddress: string = '127.0.0.1';
+    public localPort: number = 0;
+
+    // Some stacks check this to determine HTTPS.
+    public encrypted: boolean = false;
 
     address() {
         return { port: 80, family: 'IPv4', address: '127.0.0.1' };
     }
 
-    destroy() {
+    destroy(_err?: any) {
         this.destroyed = true;
+        this.emit('close');
         return this;
     }
 
@@ -129,67 +134,87 @@ class MockSocket extends EventEmitter {
     }
 }
 
-// Symbol to store our Web API implementation
 const WEB_IMPL = Symbol('webImpl');
 
+/**
+ * Adapter: Fetch Request -> Node IncomingMessage (Readable)
+ *
+ * This exists to run Express-style middleware stacks against a Fetch Request.
+ *
+ * Backpressure:
+ * - When `push()` returns false, we pause until Node calls `_read()` again.
+ */
 class WebProxyIncomingMessage extends IncomingMessage {
-    // Store our implementation in a symbol to avoid conflicts
     [WEB_IMPL]: {
         body: ReadableStream<Uint8Array> | null;
         bodyReader: ReadableStreamDefaultReader<Uint8Array> | null;
         isReading: boolean;
+        waitForRead: Deferred<void> | null;
     };
 
     constructor(request: Request) {
-        // Create a mock socket first
-        const mockSocket = new MockSocket() as any;
+        // IncomingMessage wants a Socket-ish object; we provide a compatible stub.
+        super(new MockSocket() as any);
 
-        // Call parent constructor with mock socket
-        super(mockSocket);
-
-        // Extract URL and method
         const url = new URL(request.url);
         this.url = url.pathname + url.search;
         this.method = request.method;
 
-        // Convert headers
-        this.headers = {};
+        // Headers (Node-style)
+        this.headers = Object.create(null);
+        (this as any).headersDistinct = Object.create(null);
         this.rawHeaders = [];
-        this.headersDistinct = {};
 
         request.headers.forEach((value, key) => {
             const lowerKey = key.toLowerCase();
-            this.headers[lowerKey] = value;
-            this.headersDistinct[lowerKey] = [value];
             this.rawHeaders.push(key, value);
+
+            const existing = this.headers[lowerKey];
+            if (existing === undefined) this.headers[lowerKey] = value;
+            else if (Array.isArray(existing)) existing.push(value);
+            else this.headers[lowerKey] = [existing as string, value];
+
+            const distinct = (this as any).headersDistinct[lowerKey] as string[] | undefined;
+            if (!distinct) (this as any).headersDistinct[lowerKey] = [value];
+            else distinct.push(value);
         });
 
-        // Set other properties
         this.httpVersion = '1.1';
         this.httpVersionMajor = 1;
         this.httpVersionMinor = 1;
+
         this.complete = true;
         this.aborted = false;
-        this.rawTrailers = [];
-        this.trailers = {};
-        this.trailersDistinct = {};
 
-        // Store Web API implementation
+        this.rawTrailers = [];
+        this.trailers = Object.create(null);
+        (this as any).trailersDistinct = Object.create(null);
+
         this[WEB_IMPL] = {
             body: request.body,
             bodyReader: null,
-            isReading: false
+            isReading: false,
+            waitForRead: null
         };
 
-        // Start reading body if present
-        if (request.body) {
-            this._startBodyReading();
-        } else {
-            // No body, end immediately
-            process.nextTick(() => {
-                this.push(null);
-            });
-        }
+        if (request.body) void this._startBodyReading();
+        else process.nextTick(() => this.push(null)); // end immediately
+    }
+
+    /**
+     * Called by Node when the consumer wants more data.
+     * We use this as the signal to resume pushing when backpressure previously paused us.
+     */
+    _read() {
+        const impl = this[WEB_IMPL];
+        if (impl.waitForRead?.isPending) impl.waitForRead.resolve();
+    }
+
+    private async _waitForReadDemand(): Promise<void> {
+        const impl = this[WEB_IMPL];
+        if (!impl.waitForRead || !impl.waitForRead.isPending) impl.waitForRead = new Deferred<void>();
+        await impl.waitForRead.promise;
+        impl.waitForRead = null;
     }
 
     private async _startBodyReading() {
@@ -203,16 +228,13 @@ class WebProxyIncomingMessage extends IncomingMessage {
 
             while (true) {
                 const { done, value } = await impl.bodyReader.read();
-
                 if (done) {
-                    this.push(null); // End of stream
+                    this.push(null);
                     break;
                 }
 
-                if (!this.push(Buffer.from(value))) {
-                    // Backpressure - wait for drain
-                    await new Promise(resolve => this.once('drain', resolve));
-                }
+                const ok = this.push(Buffer.from(value));
+                if (!ok) await this._waitForReadDemand();
             }
         } catch (error) {
             this.destroy(error as Error);
@@ -221,60 +243,77 @@ class WebProxyIncomingMessage extends IncomingMessage {
         }
     }
 
-    _read() {
-        // This will be called by the Readable stream
-        // Body reading is handled by _startBodyReading
-    }
-
-    // Override setTimeout to ensure it returns this for chaining
+    /**
+     * Override setTimeout to keep chainable behavior expected by some middleware.
+     */
     setTimeout(msecs: number, callback?: () => void): this {
-        if (callback) {
-            setTimeout(callback, msecs);
-        }
+        if (callback) setTimeout(callback, msecs);
         return this;
     }
 }
 
+/**
+ * Adapter: Node ServerResponse -> Fetch Response
+ *
+ * Designed for Express compatibility:
+ * - Supports setHeader/getHeader/removeHeader/writeHead/write/end/flushHeaders
+ * - Streams response body through a TransformStream to a Fetch Response
+ * - Resolves a Deferred<Response> exactly once, when headers are first sent
+ */
 class WebProxyServerResponse<Request extends IncomingMessage = IncomingMessage> extends ServerResponse<Request> {
-    // Store our Web API implementation
     [WEB_IMPL]: {
         headers: OutgoingHttpHeaders;
-        chunks: Buffer[];
         headersSent: boolean;
         finished: boolean;
-        writer: WritableStreamDefaultWriter<Uint8Array> | null;
+        stream: {
+            readable: ReadableStream<Uint8Array>;
+            writer: WritableStreamDefaultWriter<Uint8Array>;
+            closed: boolean;
+        };
         responseDeferred: Deferred<Response>;
-        // Store original methods to prevent Express from overriding them
         originalMethods: {
             setHeader: (name: string, value: number | string | readonly string[]) => void;
             getHeader: (name: string) => number | string | string[] | undefined;
             removeHeader: (name: string) => void;
-            writeHead: (statusCode: number, statusMessageOrHeaders?: string | OutgoingHttpHeaders | OutgoingHttpHeader[], headers?: OutgoingHttpHeaders | OutgoingHttpHeader[]) => void;
-            write: (chunk: any, encoding?: BufferEncoding | ((error: Error | null | undefined) => void), callback?: (error: Error | null | undefined) => void) => boolean;
-            end: (chunk?: any, encoding?: BufferEncoding | (() => void), callback?: () => void) => WebProxyServerResponse<Request>;
+            writeHead: (
+                statusCode: number,
+                statusMessageOrHeaders?: string | OutgoingHttpHeaders | OutgoingHttpHeader[],
+                headers?: OutgoingHttpHeaders | OutgoingHttpHeader[]
+            ) => void;
+            write: (
+                chunk: any,
+                encoding?: BufferEncoding | ((error: Error | null | undefined) => void),
+                callback?: (error: Error | null | undefined) => void
+            ) => boolean;
+            end: (
+                chunk?: any,
+                encoding?: BufferEncoding | (() => void),
+                callback?: () => void
+            ) => WebProxyServerResponse<Request>;
             _sendHeaders: () => void;
+            flushHeaders: () => void;
         };
     };
-    private locals: any;
+
+    /** Express compatibility: `res.locals` */
+    public locals: any;
 
     constructor(req: Request, responseDeferred: Deferred<Response>) {
-        // Create mock socket
-        const mockSocket = new MockSocket() as any;
-
-        // Call parent constructor
         super(req);
-        super.assignSocket(mockSocket);
 
-        // Initialize locals for Express compatibility
+        // Assign a mock socket to satisfy ServerResponse internals
+        super.assignSocket(new MockSocket() as any);
+
         this.locals = Object.create(null);
 
-        // Store Web API implementation with original methods
+        const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+        const writer = writable.getWriter();
+
         this[WEB_IMPL] = {
-            headers: {},
-            chunks: [],
+            headers: Object.create(null),
             headersSent: false,
             finished: false,
-            writer: null,
+            stream: { readable, writer, closed: false },
             responseDeferred,
             originalMethods: {
                 setHeader: this._webSetHeader.bind(this),
@@ -283,69 +322,39 @@ class WebProxyServerResponse<Request extends IncomingMessage = IncomingMessage> 
                 writeHead: this._webWriteHead.bind(this),
                 write: this._webWrite.bind(this),
                 end: this._webEnd.bind(this),
-                _sendHeaders: this._webSendHeaders.bind(this)
+                _sendHeaders: this._webSendHeaders.bind(this),
+                flushHeaders: this._webFlushHeaders.bind(this)
             }
         };
 
-        // Override critical methods that Express might call
         this._setupWebApiIntegration();
     }
 
+    /**
+     * Lock down methods that Express/middleware frequently override via prototypes.
+     * We expose stable behavior backed by our Web Response implementation.
+     */
     private _setupWebApiIntegration() {
         const impl = this[WEB_IMPL];
 
-        // Override with non-enumerable properties so Express prototype doesn't override them
-        Object.defineProperty(this, 'setHeader', {
-            value: impl.originalMethods.setHeader,
-            writable: false,
-            enumerable: false,
-            configurable: false
-        });
+        const lock = (name: string, value: any) => {
+            Object.defineProperty(this, name, {
+                value,
+                writable: false,
+                enumerable: false,
+                configurable: false
+            });
+        };
 
-        Object.defineProperty(this, 'getHeader', {
-            value: impl.originalMethods.getHeader,
-            writable: false,
-            enumerable: false,
-            configurable: false
-        });
+        lock('setHeader', impl.originalMethods.setHeader);
+        lock('getHeader', impl.originalMethods.getHeader);
+        lock('removeHeader', impl.originalMethods.removeHeader);
+        lock('writeHead', impl.originalMethods.writeHead);
+        lock('write', impl.originalMethods.write);
+        lock('end', impl.originalMethods.end);
+        lock('_sendHeaders', impl.originalMethods._sendHeaders);
+        lock('flushHeaders', impl.originalMethods.flushHeaders);
 
-        Object.defineProperty(this, 'removeHeader', {
-            value: impl.originalMethods.removeHeader,
-            writable: false,
-            enumerable: false,
-            configurable: false
-        });
-
-        Object.defineProperty(this, 'writeHead', {
-            value: impl.originalMethods.writeHead,
-            writable: false,
-            enumerable: false,
-            configurable: false
-        });
-
-        Object.defineProperty(this, 'write', {
-            value: impl.originalMethods.write,
-            writable: false,
-            enumerable: false,
-            configurable: false
-        });
-
-        Object.defineProperty(this, 'end', {
-            value: impl.originalMethods.end,
-            writable: false,
-            enumerable: false,
-            configurable: false
-        });
-
-        // Also define _sendHeaders to prevent Express from overriding it
-        Object.defineProperty(this, '_sendHeaders', {
-            value: impl.originalMethods._sendHeaders,
-            writable: false,
-            enumerable: false,
-            configurable: false
-        });
-
-        // Override headersSent and finished as getters
         Object.defineProperty(this, 'headersSent', {
             get: () => impl.headersSent,
             enumerable: true,
@@ -361,41 +370,37 @@ class WebProxyServerResponse<Request extends IncomingMessage = IncomingMessage> 
 
     private _webSetHeader(name: string, value: number | string | readonly string[]) {
         const impl = this[WEB_IMPL];
-        if (impl.headersSent) {
-            throw new Error('Cannot set headers after they are sent');
-        }
-        // @ts-ignore
-        impl.headers[name.toLowerCase()] = value;
-        // Call original for Node.js compatibility
-        return super.setHeader(name, value);
+        if (impl.headersSent) throw new Error('Cannot set headers after they are sent');
+
+        impl.headers[name.toLowerCase()] = value as any;
+        return super.setHeader(name, value as any);
     }
 
     private _webGetHeader(name: string) {
-        return this[WEB_IMPL].headers[name.toLowerCase()];
+        return this[WEB_IMPL].headers[name.toLowerCase()] as any;
     }
 
     private _webRemoveHeader(name: string) {
         const impl = this[WEB_IMPL];
-        if (impl.headersSent) {
-            throw new Error('Cannot remove headers after they are sent');
-        }
+        if (impl.headersSent) throw new Error('Cannot remove headers after they are sent');
+
         delete impl.headers[name.toLowerCase()];
         super.removeHeader(name);
     }
 
-    private _webWriteHead(statusCode: number, statusMessageOrHeaders?: string | OutgoingHttpHeaders | OutgoingHttpHeader[], headers?: OutgoingHttpHeaders | OutgoingHttpHeader[]) {
+    private _webWriteHead(
+        statusCode: number,
+        statusMessageOrHeaders?: string | OutgoingHttpHeaders | OutgoingHttpHeader[],
+        headers?: OutgoingHttpHeaders | OutgoingHttpHeader[]
+    ) {
         const impl = this[WEB_IMPL];
-        if (impl.headersSent) {
-            throw new Error('Cannot set headers after they are sent');
-        }
+        if (impl.headersSent) throw new Error('Cannot set headers after they are sent');
 
         this.statusCode = statusCode;
 
         if (typeof statusMessageOrHeaders === 'string') {
             this.statusMessage = statusMessageOrHeaders;
-            if (headers) {
-                this._setHeadersFromParam(headers);
-            }
+            if (headers) this._setHeadersFromParam(headers);
         } else if (statusMessageOrHeaders) {
             this._setHeadersFromParam(statusMessageOrHeaders);
         }
@@ -404,35 +409,33 @@ class WebProxyServerResponse<Request extends IncomingMessage = IncomingMessage> 
         return this;
     }
 
-    private _webWrite(chunk: any, encoding?: BufferEncoding | ((error: Error | null | undefined) => void), callback?: (error: Error | null | undefined) => void) {
+    private _webWrite(
+        chunk: any,
+        encoding?: BufferEncoding | ((error: Error | null | undefined) => void),
+        callback?: (error: Error | null | undefined) => void
+    ): boolean {
         if (typeof encoding === 'function') {
             callback = encoding;
-            encoding = 'utf8';
+            encoding = undefined;
         }
 
         const impl = this[WEB_IMPL];
         if (impl.finished) {
-            if (callback) callback(new Error('Cannot write after end'));
+            callback?.(new Error('Cannot write after end'));
             return false;
         }
 
-        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding as BufferEncoding || 'utf8');
+        if (!impl.headersSent) impl.originalMethods._sendHeaders();
 
-        if (impl.headersSent) {
-            // Headers already sent, write directly to stream
-            if (impl.writer) {
-                impl.writer.write(new Uint8Array(buffer)).then(() => {
-                    if (callback) callback(null);
-                }).catch(callback);
-            } else {
-                if (callback) callback(new Error('No writer available'));
-                return false;
-            }
-        } else {
-            // Buffer until headers are sent
-            impl.chunks.push(buffer);
-            if (callback) process.nextTick(callback);
-        }
+        const buffer = Buffer.isBuffer(chunk)
+            ? chunk
+            : Buffer.from(chunk, (encoding as BufferEncoding | undefined) ?? 'utf8');
+
+        // Web streams are async; Node's write() is sync-ish. We return `true` as a pragmatic default.
+        impl.stream.writer
+            .write(new Uint8Array(buffer))
+            .then(() => callback?.(null))
+            .catch((err) => callback?.(err));
 
         return true;
     }
@@ -454,129 +457,95 @@ class WebProxyServerResponse<Request extends IncomingMessage = IncomingMessage> 
             impl.originalMethods.write(chunk, encoding as BufferEncoding);
         }
 
-        if (!impl.headersSent) {
-            impl.originalMethods._sendHeaders();
-        }
+        if (!impl.headersSent) impl.originalMethods._sendHeaders();
 
-        if (impl.writer) {
-            impl.writer.close().then(() => {
+        this._closeBodyStream().then(
+            () => {
                 impl.finished = true;
-                if (callback) callback();
+                callback?.();
                 this.emit('finish');
-            }).catch((error: Error) => {
-                this.emit('error', error);
-            });
-        } else {
-            impl.finished = true;
-            if (callback) callback();
-            this.emit('finish');
-        }
+            },
+            (err) => {
+                this.emit('error', err);
+            }
+        );
 
         return this;
     }
 
+    private _webFlushHeaders(): void {
+        const impl = this[WEB_IMPL];
+        if (!impl.headersSent) impl.originalMethods._sendHeaders();
+    }
+
     private _setHeadersFromParam(headers: OutgoingHttpHeaders | OutgoingHttpHeader[]) {
+        const impl = this[WEB_IMPL];
+
         if (Array.isArray(headers)) {
             for (let i = 0; i < headers.length; i += 2) {
                 if (i + 1 < headers.length) {
-                    this[WEB_IMPL].originalMethods.setHeader(headers[i] as string, headers[i + 1]);
+                    impl.originalMethods.setHeader(headers[i] as string, headers[i + 1] as any);
                 }
             }
         } else {
-            Object.entries(headers).forEach(([key, value]) => {
-                if (value !== undefined) {
-                    this[WEB_IMPL].originalMethods.setHeader(key, value);
-                }
-            });
+            for (const [key, value] of Object.entries(headers)) {
+                if (value !== undefined) impl.originalMethods.setHeader(key, value as any);
+            }
         }
     }
 
+    /**
+     * Send headers and resolve the deferred Fetch Response if still pending.
+     * This is called once (idempotent).
+     */
     private _webSendHeaders() {
         const impl = this[WEB_IMPL];
         if (impl.headersSent) return;
 
         impl.headersSent = true;
 
-        // Convert headers to Web API format
         const webHeaders = new Headers();
-        Object.entries(impl.headers).forEach(([key, value]) => {
+        for (const [key, value] of Object.entries(impl.headers)) {
+            if (value === undefined) continue;
+
+            const k = key.toLowerCase();
             if (Array.isArray(value)) {
-                value.forEach(v => webHeaders.append(key, String(v)));
-            } else if (value !== undefined) {
-                webHeaders.set(key, String(value));
+                for (const v of value) webHeaders.append(k, String(v));
+            } else {
+                // For Set-Cookie, always append (never overwrite)
+                if (k === 'set-cookie') webHeaders.append(k, String(value));
+                else webHeaders.set(k, String(value));
             }
-        });
-
-        // Handle null body status codes that are not allowed by Web API Response constructor
-        const nullBodyStatuses = [204, 304];
-        const isNullBodyStatus = nullBodyStatuses.includes(this.statusCode);
-
-        // Get default status text helper function
-        const getDefaultStatusText = (statusCode: number): string => {
-            const statusTexts: Record<number, string> = {
-                200: 'OK',
-                201: 'Created',
-                204: 'No Content',
-                301: 'Moved Permanently',
-                302: 'Found',
-                304: 'Not Modified',
-                400: 'Bad Request',
-                401: 'Unauthorized',
-                403: 'Forbidden',
-                404: 'Not Found',
-                405: 'Method Not Allowed',
-                500: 'Internal Server Error',
-                502: 'Bad Gateway',
-                503: 'Service Unavailable'
-            };
-            return statusTexts[statusCode] || 'Unknown Status';
-        };
-
-        let response: Response;
-
-        if (isNullBodyStatus) {
-            // For null body statuses, create response without body
-            response = new Response(null, {
-                status: this.statusCode,
-                statusText: this.statusMessage || getDefaultStatusText(this.statusCode),
-                headers: webHeaders
-            });
-
-            // Close the writer immediately since there's no body
-            if (impl.writer) {
-                impl.writer.close().catch(err => {
-                    this.emit('error', err);
-                });
-            }
-        } else {
-            // Create ReadableStream for response body
-            const { readable, writable } = new TransformStream();
-            const writer = writable.getWriter();
-            impl.writer = writer;
-
-            // Write any buffered chunks
-            if (impl.chunks.length > 0) {
-                const buffer = Buffer.concat(impl.chunks);
-                writer.write(new Uint8Array(buffer)).catch(err => {
-                    this.emit('error', err);
-                });
-                impl.chunks = [];
-            }
-
-            // Create the Response
-            response = new Response(readable, {
-                status: this.statusCode,
-                statusText: this.statusMessage || getDefaultStatusText(this.statusCode),
-                headers: webHeaders
-            });
         }
 
+        const status = this.statusCode || 200;
+        const statusText = this.statusMessage || STATUS_CODES[status] || '';
+
+        const isNullBodyStatus = status === 204 || status === 304 || (status >= 100 && status < 200);
+
+        const response = isNullBodyStatus
+            ? new Response(null, { status, statusText, headers: webHeaders })
+            : new Response(impl.stream.readable, { status, statusText, headers: webHeaders });
+
         impl.responseDeferred.resolve(response);
+
+        // Null body statuses must not have a body stream producing chunks.
+        if (isNullBodyStatus) void this._closeBodyStream();
     }
 
+    private async _closeBodyStream(): Promise<void> {
+        const impl = this[WEB_IMPL];
+        if (impl.stream.closed) return;
+        impl.stream.closed = true;
+        try {
+            await impl.stream.writer.close();
+        } catch {
+            // Ignore close failures (e.g. consumer aborted)
+        }
+    }
 
+    // --- Additional methods for Express-ish compatibility ---
 
-    // Additional methods for Express compatibility
     getHeaders(): OutgoingHttpHeaders {
         return { ...this[WEB_IMPL].headers };
     }
@@ -591,62 +560,51 @@ class WebProxyServerResponse<Request extends IncomingMessage = IncomingMessage> 
 
     appendHeader(name: string, value: string | string[]): this {
         const impl = this[WEB_IMPL];
-        if (impl.headersSent) {
-            throw new Error('Cannot append headers after they are sent');
-        }
+        if (impl.headersSent) throw new Error('Cannot append headers after they are sent');
 
-        const lowerName = name.toLowerCase();
-        const existing = impl.headers[lowerName];
+        const lower = name.toLowerCase();
+        const existing = impl.headers[lower];
 
-        if (existing === undefined) {
-            // @ts-ignore
-            impl.headers[lowerName] = value;
-        } else if (Array.isArray(existing)) {
-            if (Array.isArray(value)) {
-                existing.push(...value);
-            } else {
-                // @ts-ignore
-                existing.push(value);
-            }
-        } else {
-            if (Array.isArray(value)) {
-                impl.headers[lowerName] = [existing as string, ...value];
-            } else {
-                impl.headers[lowerName] = [existing as string, value];
-            }
-        }
+        const add = (v: string) => {
+            if (existing === undefined) impl.headers[lower] = v;
+            else if (Array.isArray(existing)) (existing as any).push(v);
+            else impl.headers[lower] = [existing as any, v];
+        };
+
+        if (Array.isArray(value)) value.forEach(add);
+        else add(value);
+
         return this;
     }
 
-    // No-op methods for Express compatibility
-    addTrailers(headers: OutgoingHttpHeaders | ReadonlyArray<[string, string]>): void {
+    addTrailers(_headers: OutgoingHttpHeaders | ReadonlyArray<[string, string]>): void {
+        // trailers not supported
     }
 
-    assignSocket(socket: Socket): void {
+    assignSocket(_socket: Socket): void {
+        // no-op (we are not a real network response)
     }
 
-    detachSocket(socket: Socket): void {
-    }
-
-    flushHeaders(): void {
-        if (!this[WEB_IMPL].headersSent) {
-            this[WEB_IMPL].originalMethods._sendHeaders();
-        }
+    detachSocket(_socket: Socket): void {
+        // no-op
     }
 
     writeContinue(callback?: () => void): void {
         if (callback) process.nextTick(callback);
     }
 
-    writeEarlyHints(hints: Record<string, string | string[]>, callback?: () => void): void {
+    writeEarlyHints(_hints: Record<string, string | string[]>, callback?: () => void): void {
         if (callback) process.nextTick(callback);
     }
 
     writeProcessing(): void {
+        // no-op
     }
 }
 
-// Event map for the server
+/**
+ * Typed event map for our proxy server.
+ */
 interface WebProxyServerEventMap<
     Req extends typeof IncomingMessage = typeof IncomingMessage,
     Res extends typeof ServerResponse<InstanceType<Req>> = typeof ServerResponse
@@ -663,34 +621,42 @@ interface WebProxyServerEventMap<
     timeout: [];
 }
 
+/**
+ * WebProxyServer
+ *
+ * - Accepts a Node-style RequestListener (e.g. an Express app function)
+ * - Emits standard http.Server events (`request`, `upgrade`, etc.)
+ * - Provides `.handle(Request|ServiceRequestEvent): Promise<Response>`
+ *
+ * This is not a real network server; it's an adapter to run Node middleware stacks in a Fetch environment.
+ */
 class WebProxyServer<
     Req extends typeof IncomingMessage = typeof IncomingMessage,
     Res extends typeof ServerResponse<InstanceType<Req>> = typeof ServerResponse,
     Listener extends RequestListener<Req, Res> | undefined = RequestListener<Req, Res>
 > extends EventEmitter<WebProxyServerEventMap<Req, Res>> implements Server<Req, Res> {
-
     private _timeoutCallbacks: ((socket: Socket) => void)[] = [];
 
     constructor(public readonly listener: Listener) {
         super();
         if (this.listener) {
-            /**
-             * @reason The listener is passed into a function because proxy function objects are not compatible with EventEmitter
-             * @error TypeError [ERR_INVALID_ARG_TYPE]: The "listener" argument must be of type function. Received an instance of Object
-             */
-            this.on('request', (req,res) => this.listener?.(req, res));
+            // Ensure we always pass a real function to EventEmitter
+            this.on('request', (req, res) => this.listener?.(req as any, res as any));
         }
     }
 
-    get keepAliveTimeoutBuffer(): number{
-        throw new Error("Method not implemented.");
-    };
-    [Symbol.asyncDispose](): Promise<void> {
-        throw new Error("Method not implemented.");
+    // --- Server interface compatibility (minimal stubs) ---
+
+    get keepAliveTimeoutBuffer(): number {
+        return 0;
     }
 
-    handleUpgrade(req: InstanceType<Req>, socket: Duplex, head: Buffer){
-        this.emit('upgrade',req, socket, head);
+    [Symbol.asyncDispose](): Promise<void> {
+        return Promise.resolve();
+    }
+
+    handleUpgrade(req: InstanceType<Req>, socket: Duplex, head: Buffer) {
+        this.emit('upgrade', req, socket, head);
     }
 
     address(): AddressInfo | string | null {
@@ -703,11 +669,8 @@ class WebProxyServer<
         return this;
     }
 
-    closeAllConnections(): void {
-    }
-
-    closeIdleConnections(): void {
-    }
+    closeAllConnections(): void {}
+    closeIdleConnections(): void {}
 
     connections: number = 0;
 
@@ -716,13 +679,11 @@ class WebProxyServer<
         return this;
     }
 
-    headersTimeout: number = 60000;
-    keepAliveTimeout: number = 5000;
+    headersTimeout: number = 60_000;
+    keepAliveTimeout: number = 5_000;
 
     listen(): this {
-        process.nextTick(() => {
-            this.emit('listening');
-        });
+        process.nextTick(() => this.emit('listening'));
         return this;
     }
 
@@ -735,81 +696,79 @@ class WebProxyServer<
         return this;
     }
 
-    requestTimeout: number = 300000;
+    requestTimeout: number = 300_000;
 
-    // Fixed setTimeout method with proper overloads
     setTimeout(msecs?: number, callback?: (socket: Socket) => void): this;
     setTimeout(callback: (socket: Socket) => void): this;
     setTimeout(msecs?: number | ((socket: Socket) => void), callback?: (socket: Socket) => void): this {
         if (typeof msecs === 'function') {
-            // First overload: setTimeout(callback)
             callback = msecs;
             msecs = undefined;
         }
-
-        if (msecs !== undefined) {
-            this.timeout = msecs;
-        }
+        if (msecs !== undefined) this.timeout = msecs;
 
         if (callback) {
             this._timeoutCallbacks.push(callback);
-            this.on('timeout', () => {
-                // Create a mock socket for the callback
-                const mockSocket = new MockSocket() as any;
-                callback(mockSocket);
-            });
+            this.on('timeout', () => callback!(new MockSocket() as any));
         }
-
         return this;
     }
 
-    timeout: number = 120000;
+    timeout: number = 120_000;
 
     unref(): this {
         return this;
     }
 
+    /**
+     * Handle a Fetch Request (or ServiceRequestEvent) through the Node RequestListener stack
+     * and return a Fetch Response.
+     */
     async handle(request_or_event: Request | ServiceRequestEvent): Promise<Response> {
-
-        let request: Request;
-        if (!(request_or_event instanceof Request)) request = request_or_event.request;
-        else request = request_or_event as Request;
-
+        const request = request_or_event instanceof Request ? request_or_event : request_or_event.request;
 
         const responseDeferred = new Deferred<Response>();
 
+        const req = new WebProxyIncomingMessage(request);
+        const res = new WebProxyServerResponse<WebProxyIncomingMessage>(req, responseDeferred);
+
+        // Express expects circular references
+        (req as any).res = res;
+        (res as any).req = req;
+
+        this.connections++;
+
+        const finalize = () => {
+            this.connections = Math.max(0, this.connections - 1);
+        };
+
+        res.on('finish', finalize);
+
+        res.on('error', (err) => {
+            finalize();
+            if (responseDeferred.isPending) responseDeferred.reject(err);
+        });
+
         try {
-            // Create Express-compatible request and response objects
-            const req = new WebProxyIncomingMessage(request);
-            const res = new WebProxyServerResponse<WebProxyIncomingMessage>(req, responseDeferred);
+            this.emit('request', req as any, res as any);
 
-            // Set up the circular references that Express expects
-            (req as any).res = res;
-            (res as any).req = req;
-
-            // Increment connection count
-            this.connections++;
-
-            // Emit the request event (Express app will handle this)
-            this.emit('request', req as InstanceType<Req>, res as InstanceType<Res>);
-
-            // Set up cleanup when response finishes
-            res.on('finish', () => {
-                this.connections--;
-            });
-
-            // Handle errors
-            res.on('error', (error) => {
-                this.connections--;
-                if (!responseDeferred.promise) {
-                    responseDeferred.reject(error);
+            // Best-effort: if the listener ends synchronously without ever sending headers,
+            // force sending headers so `handle()` doesn't hang forever.
+            process.nextTick(() => {
+                if (responseDeferred.isPending && (res as any).finished) {
+                    try {
+                        (res as any).flushHeaders?.();
+                    } catch {
+                        // ignore
+                    }
                 }
             });
 
             return await responseDeferred.promise;
-        } catch (error) {
-            this.connections--;
-            throw error;
+        } catch (err) {
+            finalize();
+            if (responseDeferred.isPending) responseDeferred.reject(err);
+            throw err;
         }
     }
 }

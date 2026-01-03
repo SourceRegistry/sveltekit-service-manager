@@ -1,3 +1,3 @@
 import "../tests/services/index.js" //Make sure this loads first
-
-export const handle = ({event, resolve}) => resolve(event)
+import type {Handle} from "@sveltejs/kit"
+export const handle: Handle = ({event, resolve}) => resolve(event)
