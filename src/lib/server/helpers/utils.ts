@@ -19,6 +19,7 @@ export const json = (data: unknown, init: ResponseInit = {}): Response => {
 
     const headers = new Headers(init.headers);
     if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+    if (!headers.has('Content-Length') && body.length > 0) headers.set('Content-Length', String(body.length));
 
     return new Response(body, {
         ...init,
@@ -36,6 +37,7 @@ export const text = (data: string | { toString(): string }, init: ResponseInit =
     const body = data.toString();
     const headers = new Headers(init.headers);
     if (!headers.has('Content-Type')) headers.set('Content-Type', 'text/plain; charset=utf-8');
+    if (!headers.has('Content-Length') && body.length > 0) headers.set('Content-Length', String(body.length));
 
     return new Response(body, {
         ...init,
@@ -80,7 +82,7 @@ export const html = (data: string | { toString(): string }, init: ResponseInit =
     const headers = new Headers(init.headers);
     if (!headers.has('Content-Type')) headers.set('Content-Type', 'text/html; charset=utf-8');
 
-    return new Response(body, { ...init, headers });
+    return new Response(body, {...init, headers});
 };
 
 /**
@@ -89,7 +91,7 @@ export const html = (data: string | { toString(): string }, init: ResponseInit =
 export const fail = (
     data: unknown,
     init: Omit<ResponseInit, 'status'> & { status?: Range<400, 499> } = {}
-): Response => json(data, { ...init, status: init.status ?? 400 });
+): Response => json(data, {...init, status: init.status ?? 400});
 
 
 /**
@@ -98,4 +100,4 @@ export const fail = (
 export const error = (
     data: unknown,
     init: Omit<ResponseInit, 'status'> & { status?: Range<500, 599> } = {}
-): Response => json(data, { ...init, status: init.status ?? 500 });
+): Response => json(data, {...init, status: init.status ?? 500});
