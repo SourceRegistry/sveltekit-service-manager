@@ -1,6 +1,6 @@
 {
 	"name": "@sourceregistry/sveltekit-service-manager",
-	"version": "0.0.1",
+	"version": "1.0.0",
 	"description": "Typed Server-Sent Events (SSE) integration for **SvelteKit** featuring strongly typed client-server communication, custom event channels, and first-class TypeScript support.",
 	"main": "./dist/index.js",
 	"module": "./dist/index.js",
