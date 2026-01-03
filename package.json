@@ -14,7 +14,7 @@
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"test": "vitest run",
 		"test:coverage": "vitest run --coverage",
-		"docs:build": "typedoc src/lib/client/index.ts src/lib/server/index.ts src/lib/protocol.ts src/lib/index.ts --out generated/docs --name \"sveltekit-service-manager\" --theme default --excludePrivate --excludeProtected --includeVersion --entryPointStrategy expand"
+		"build:docs": "typedoc src/lib/client/index.ts src/lib/server/index.ts src/lib/protocol.ts src/lib/index.ts --out generated/docs --name \"sveltekit-service-manager\" --theme default --excludePrivate --excludeProtected --includeVersion --entryPointStrategy expand"
 	},
 	"files": [
 		"dist",
