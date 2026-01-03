@@ -81,10 +81,10 @@
 	],
 	"author": "A.P.A. Slaa (a.p.a.slaa@projectsource.nl)",
 	"license": "Apache-2.0",
+	"homepage": "https://sourceregistry.github.io/sveltekit-service-manager/",
 	"bugs": {
 		"url": "https://github.com/SourceRegistry/sveltekit-service-manager/issues"
 	},
-	"homepage": "https://sourceregistry.github.io/sveltekit-service-manager/",
 	"publishConfig": {
 		"access": "public"
 	},
