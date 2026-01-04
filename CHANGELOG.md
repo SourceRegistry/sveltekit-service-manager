@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v1.0.2...v1.1.0) (2026-01-04)
+
+
+### Features
+
+* allow hot module reload linking in service object ([7c810b9](https://github.com/SourceRegistry/sveltekit-service-manager/commit/7c810b93a3f9cb3ed0775cd511297a70eb9a3d60))
+
 ## [1.0.2](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v1.0.1...v1.0.2) (2026-01-03)
 
 
