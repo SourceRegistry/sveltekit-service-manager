@@ -1,4 +1,4 @@
-import {Router, ServiceManager} from "$lib/index.js";
+import {Router, type Service, ServiceManager} from "$lib/index.js";
 
 const router = Router();
 
@@ -12,8 +12,8 @@ router.GET("/", () => {
 
 const service = {
     name: "ping",
-    route: router
-} as const;
+    route: router,
+} satisfies Service<'ping'>;
 
 export type PingService = typeof service;
 

@@ -146,12 +146,22 @@ export interface Service<
     Args extends readonly unknown[] = readonly unknown[],
     L = unknown
 > {
+    /**
+     * Name of the service make also api route service_name
+     */
     readonly name: T;
     readonly local?: ((...args: Args) => L) | L;
     readonly route?: Partial<Record<RequestMethods, ServiceHandler>> | ServiceRouter | ServiceHandler;
+    /**
+     * @important Make sure this is side effect free.
+     */
     readonly load?: () => MaybePromise<void>;
     readonly cleanup?: () => MaybePromise<void>;
     readonly dependsOn?: ReadonlyArray<keyof App.Services>;
+    /**
+     * Allows hot module reload linking
+     */
+    readonly hmr?: ViteImportMeta['hot']
 }
 
 /**
@@ -865,7 +875,7 @@ export class ServiceManager {
         // -------------------------
         // ✅ Vite HMR integration
         // -------------------------
-        const hot = module?.hot;
+        const hot = module?.hot || _service.hmr;
         if (hot) {
             // Store the service name in hot data so disposal can clean it
             hot.data.serviceName = _service.name;
