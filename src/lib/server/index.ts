@@ -161,7 +161,7 @@ export interface Service<
     /**
      * Allows hot module reload linking
      */
-    readonly hmr?: ViteImportMeta['hot']
+    readonly hmr?: ViteImportMeta
 }
 
 /**
@@ -875,7 +875,7 @@ export class ServiceManager {
         // -------------------------
         // ✅ Vite HMR integration
         // -------------------------
-        const hot = module?.hot || _service.hmr;
+        const hot = module?.hot ?? _service.hmr?.hot;
         if (hot) {
             // Store the service name in hot data so disposal can clean it
             hot.data.serviceName = _service.name;
