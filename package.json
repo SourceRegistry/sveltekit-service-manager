@@ -1,6 +1,6 @@
 {
 	"name": "@sourceregistry/sveltekit-service-manager",
-	"version": "1.0.1",
+	"version": "1.0.2",
 	"description": "A minimal, production-oriented service gateway for SvelteKit.",
 	"main": "./dist/index.js",
 	"module": "./dist/index.js",
