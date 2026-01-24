@@ -1,3 +1,10 @@
+## [1.1.2](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v1.1.1...v1.1.2) (2026-01-24)
+
+
+### Bug Fixes
+
+* export server definitions as standard import client via /client ([6769a46](https://github.com/SourceRegistry/sveltekit-service-manager/commit/6769a4662898a89a555173b09bdc83ba6ae0335f))
+
 ## [1.1.1](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v1.1.0...v1.1.1) (2026-01-04)
 
 
