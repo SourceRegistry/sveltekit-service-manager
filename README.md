@@ -215,7 +215,7 @@ The client helper provides a **typed, ergonomic way** to call public services.
 ### Basic usage
 
 ```ts
-import { Service } from '$lib/client';
+import {Service} from "@sourceregistry/sveltekit-service-manager";
 
 const ping = Service('ping');
 

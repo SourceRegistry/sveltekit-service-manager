@@ -24,13 +24,11 @@
 	"sideEffects": [
 		"**/*.css"
 	],
-	"svelte": "./dist/client/index.js",
-	"types": "./dist/client/index.d.ts",
 	"type": "module",
 	"exports": {
 		".": {
-			"types": "./dist/client/index.d.ts",
-			"import": "./dist/client/index.js"
+			"types": "./dist/server/index.d.ts",
+			"import": "./dist/server/index.js"
 		},
 		"./server": {
 			"types": "./dist/server/index.d.ts",
@@ -51,21 +49,21 @@
 		"@semantic-release/npm": "^12.0.2",
 		"@semantic-release/release-notes-generator": "^14.0.3",
 		"@sveltejs/adapter-auto": "^7.0.0",
-		"@sveltejs/kit": "^2.49.1",
+		"@sveltejs/kit": "^2.50.1",
 		"@sveltejs/package": "^2.5.7",
-		"@sveltejs/vite-plugin-svelte": "^6.2.1",
-		"@types/node": "^25.0.3",
-		"@vitest/browser-playwright": "^4.0.15",
-		"@vitest/coverage-v8": "^4.0.16",
-		"playwright": "^1.57.0",
-		"publint": "^0.3.15",
-		"svelte": "^5.46.1",
+		"@sveltejs/vite-plugin-svelte": "^6.2.4",
+		"@types/node": "^25.0.10",
+		"@vitest/browser-playwright": "^4.0.18",
+		"@vitest/coverage-v8": "^4.0.18",
+		"playwright": "^1.58.0",
+		"publint": "^0.3.17",
+		"svelte": "^5.48.2",
 		"svelte-check": "^4.3.5",
-		"typedoc": "^0.28.14",
+		"typedoc": "^0.28.16",
 		"typescript": "^5.9.3",
-		"vite": "^7.2.6",
-		"vitest": "^4.0.16",
-		"vitest-browser-svelte": "^2.0.1"
+		"vite": "^7.3.1",
+		"vitest": "^4.0.18",
+		"vitest-browser-svelte": "^2.0.2"
 	},
 	"repository": {
 		"type": "git",
