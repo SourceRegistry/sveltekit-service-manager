@@ -57,6 +57,35 @@ export type RouteHandler<Path extends string> = (
     event: ServiceRequestEvent<RequestEvent['params'] & ExtractPathParams<Path>, Path>
 ) => MaybePromise<Response>;
 
+/**
+ * Result contract for `ServiceRouter.pre()` handlers.
+ *
+ * - `void`: continue with current event
+ * - `ServiceRequestEvent`: continue with replaced event
+ * - `Response`: short-circuit routing and skip local/nested dispatch
+ */
+export type PreRouteHandlerResult =
+    | void
+    | ServiceRequestEvent
+    | Response;
+
+/**
+ * Runs before request dispatch in {@link ServiceRouter.handle}.
+ */
+export type PreRouteHandler = (
+    event: ServiceRequestEvent
+) => MaybePromise<PreRouteHandlerResult>;
+
+/**
+ * Runs after request dispatch in {@link ServiceRouter.handle}.
+ *
+ * Return a `Response` to replace the outgoing response.
+ */
+export type PostRouteHandler = (
+    event: ServiceRequestEvent,
+    response: Response
+) => MaybePromise<Response | void>;
+
 // @ts-ignore
 export type ActionHandler<
     Path extends string,
@@ -281,6 +310,8 @@ const createPathRegex = <Path extends string>(path: Path) => {
 export class ServiceRouter {
     private _routes: Route<any>[] = [];
     private _nestedRouters: NestedRouter[] = [];
+    private preHandlers: PreRouteHandler[] = [];
+    private postHandlers: PostRouteHandler[] = [];
 
     private routesSorted = false;
     private nestedSorted = false;
@@ -344,6 +375,31 @@ export class ServiceRouter {
     /** Register an OPTIONS handler. */
     OPTIONS<Path extends string>(path: Path, handler: RouteHandler<Path>): this {
         return this.addHandler('OPTIONS', path, handler);
+    }
+
+    /**
+     * Register a pre-dispatch hook.
+     *
+     * Hooks run in registration order before nested/local route matching.
+     * A hook may return:
+     * - `void` to continue
+     * - a new `ServiceRequestEvent` to replace the current event
+     * - a `Response` to short-circuit the request
+     */
+    pre(handler: PreRouteHandler): this {
+        this.preHandlers.push(handler);
+        return this;
+    }
+
+    /**
+     * Register a post-dispatch hook.
+     *
+     * Hooks run in registration order after a response is produced.
+     * Returning a `Response` replaces the current outgoing response.
+     */
+    post(handler: PostRouteHandler): this {
+        this.postHandlers.push(handler);
+        return this;
     }
 
     /**
@@ -441,21 +497,46 @@ export class ServiceRouter {
     /**
      * Handle a service-relative request by matching nested routers first, then local routes.
      */
-    public handle(event: ServiceRequestEvent): MaybePromise<Response> {
-        const {url, request} = event;
-        const method = request.method as RequestMethods;
+    public async handle(event: ServiceRequestEvent): Promise<Response> {
+        let currentEvent: ServiceRequestEvent = event;
+        let response: Response | null = null;
 
-        // Use the already processed service path from createServiceRequest
-        const path = this.normalizePath(event.route.service || url.pathname);
+        for (const hook of this.preHandlers) {
+            const result = await hook(currentEvent);
+            if (!result) continue;
 
-        // Check nested routers first
-        const nestedResponse = this.handleNestedRouters(event, path);
-        if (nestedResponse) return nestedResponse;
+            if (result instanceof Response) {
+                response = result;
+                break;
+            }
 
-        // Sort route lists once if needed
-        if (!this.routesSorted) this.sortRoutes();
+            currentEvent = result;
+        }
 
-        return this.handleLocalRoutes(event, method, path);
+        if (!response) {
+            const {url, request} = currentEvent;
+            const method = request.method as RequestMethods;
+
+            // Use the already processed service path from createServiceRequest
+            const path = this.normalizePath(currentEvent.route.service || url.pathname);
+
+            // Check nested routers first
+            const nestedResponse = this.handleNestedRouters(currentEvent, path);
+            if (nestedResponse) {
+                response = await nestedResponse;
+            } else {
+                // Sort route lists once if needed
+                if (!this.routesSorted) this.sortRoutes();
+                response = await this.handleLocalRoutes(currentEvent, method, path);
+            }
+        }
+
+        for (const hook of this.postHandlers) {
+            const next = await hook(currentEvent, response);
+            if (next instanceof Response) response = next;
+        }
+
+        return response;
     }
 
     /**
@@ -465,6 +546,8 @@ export class ServiceRouter {
     public reset(): this {
         this._routes = [];
         this._nestedRouters = [];
+        this.preHandlers = [];
+        this.postHandlers = [];
 
         // Clear indexes
         this.routesByMethod = {
@@ -748,7 +831,57 @@ export class ServiceRouter {
             return route.handler(enhancedEvent as any);
         }
 
+        const allowedMethods = this.getAllowedMethodsForPath(path);
+        if (allowedMethods.length > 0) {
+            const allowHeader = allowedMethods.join(', ');
+
+            if (method === 'OPTIONS') {
+                return new Response(null, {
+                    status: 204,
+                    headers: {
+                        Allow: allowHeader
+                    }
+                });
+            }
+
+            return new Response(
+                JSON.stringify({
+                    message: `Method ${method} not allowed`,
+                    allowed: allowedMethods
+                }),
+                {
+                    status: 405,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Allow: allowHeader
+                    }
+                }
+            );
+        }
+
         throw error(404, {message: `Route not found: ${method} ${path}`});
+    }
+
+    /**
+     * Collect allowed methods for a path across all routes.
+     *
+     * If GET exists, HEAD is considered allowed.
+     * OPTIONS is considered allowed whenever any route matches.
+     */
+    private getAllowedMethodsForPath(path: string): RequestMethods[] {
+        const allowed = new Set<RequestMethods>();
+
+        for (const route of this._routes) {
+            if (path.match(route.regex)) {
+                allowed.add(route.method);
+            }
+        }
+
+        if (allowed.has('GET')) allowed.add('HEAD');
+        if (allowed.size > 0) allowed.add('OPTIONS');
+
+        const order: RequestMethods[] = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
+        return order.filter((m) => allowed.has(m));
     }
 
     /**

@@ -194,6 +194,63 @@ export const service = {
 
 ---
 
+## Router pre/post hooks
+
+`ServiceRouter` supports request lifecycle hooks:
+
+```ts
+import { Router, Action } from '@sourceregistry/sveltekit-service-manager';
+
+const router = Router()
+  .pre((event) => {
+    // pre can:
+    // - return void to continue
+    // - return a new event to replace current context
+    // - return Response to short-circuit
+    return {
+      ...event,
+      locals: { ...event.locals, requestId: crypto.randomUUID() }
+    } as any;
+  })
+  .GET('/health', ({ locals }) =>
+    Action.success(200, { requestId: (locals as any).requestId })
+  )
+  .post((_event, response) => {
+    // post can observe/replace the outgoing response
+    const headers = new Headers(response.headers);
+    headers.set('x-service-router-post', '1');
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers
+    });
+  });
+```
+
+Best practices:
+
+* Keep hooks small and deterministic (auth context, tracing, audit headers).
+* Prefer returning a `Response` from `pre` only for hard stops (auth/maintenance).
+* Avoid expensive I/O in hooks; call service handlers for business logic.
+* Use `post` for response shaping/metadata, not core request routing.
+
+---
+
+## Production checklist
+
+Keep this simple and consistent for production:
+
+* Set explicit gateway allowlists with stable `accessKey` values per gateway.
+* Add `pre` hooks for auth and request context (request-id, tenant, actor).
+* Add `post` hooks for response metadata (trace headers, cache policy).
+* Prefer explicit route methods (`GET/POST/...`) and rely on built-in `405` + `Allow` behavior.
+* Use service `cleanup()` for released resources (timers, sockets, workers).
+* Keep `ServiceManager.Load(service, import.meta)` in service modules for safe HMR in development.
+* Log internal errors server-side; return normalized client-safe error bodies.
+* Add tests for auth paths, method restrictions, and nested router routing.
+
+---
+
 ## Internal service calls (no HTTP)
 
 If a service defines `local`, you can call it directly:

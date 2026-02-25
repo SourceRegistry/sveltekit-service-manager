@@ -170,6 +170,83 @@ describe("ServiceRouter", () => {
         expect(devalue.parse(body.data)).toEqual({ userId: "42" });
     });
 
+    it("runs pre hooks before route handling and can replace event", async () => {
+        const router = Router()
+            .pre((event) => ({
+                ...event,
+                locals: { ...event.locals, traceId: "trace-1" }
+            }) as any)
+            .GET("/health", ({ locals }) => Action.success(200, { traceId: (locals as any).traceId }));
+
+        const res = await router.handle(mockServiceEvent("/health"));
+        const body = await res.json();
+
+        expect(res.status).toBe(200);
+        expect(devalue.parse(body.data)).toEqual({ traceId: "trace-1" });
+    });
+
+    it("allows pre hooks to short-circuit with a response", async () => {
+        const handler = vi.fn(() => Action.success(200, { ok: true }));
+        const router = Router()
+            .pre(() => Action.error(401, { message: "Unauthorized" } as any))
+            .GET("/health", handler);
+
+        const res = await router.handle(mockServiceEvent("/health"));
+        const body = await res.json();
+
+        expect(res.status).toBe(401);
+        expect(body.type).toBe("error");
+        expect(handler).not.toHaveBeenCalled();
+    });
+
+    it("runs post hooks after handling and can replace response", async () => {
+        const router = Router()
+            .GET("/health", () => Action.success(200, { ok: true }))
+            .post((_event, response) => {
+                const headers = new Headers(response.headers);
+                headers.set("x-post-hook", "applied");
+                return new Response(response.body, {
+                    status: response.status,
+                    statusText: response.statusText,
+                    headers
+                });
+            });
+
+        const res = await router.handle(mockServiceEvent("/health"));
+        const body = await res.json();
+
+        expect(res.status).toBe(200);
+        expect(res.headers.get("x-post-hook")).toBe("applied");
+        expect(body.type).toBe("success");
+    });
+
+    it("returns 405 with Allow header when path exists but method does not", async () => {
+        const router = Router().GET("/health", () => Action.success(200, { ok: true }));
+
+        const res = await router.handle(mockServiceEvent("/health", { method: "POST" }));
+        const body = await res.json();
+
+        expect(res.status).toBe(405);
+        expect(res.headers.get("allow")).toContain("GET");
+        expect(res.headers.get("allow")).toContain("HEAD");
+        expect(res.headers.get("allow")).toContain("OPTIONS");
+        expect(body.message).toContain("Method POST not allowed");
+    });
+
+    it("handles OPTIONS automatically for known paths", async () => {
+        const router = Router()
+            .GET("/health", () => Action.success(200, { ok: true }))
+            .POST("/health", () => Action.success(200, { ok: true }));
+
+        const res = await router.handle(mockServiceEvent("/health", { method: "OPTIONS" }));
+
+        expect(res.status).toBe(204);
+        expect(res.headers.get("allow")).toContain("GET");
+        expect(res.headers.get("allow")).toContain("POST");
+        expect(res.headers.get("allow")).toContain("HEAD");
+        expect(res.headers.get("allow")).toContain("OPTIONS");
+    });
+
     // it("throws 404 on unknown route", async () => {
     //     const router = Router().GET("/ok", () => new Response("ok"));
     //
