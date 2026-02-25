@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v1.1.2...v1.2.0) (2026-02-25)
+
+
+### Features
+
+* **router:** add pre/post hooks and production HTTP method handling ([2b2123e](https://github.com/SourceRegistry/sveltekit-service-manager/commit/2b2123ee6da976ba65fd284963c09fc74b7e4319))
+
 ## [1.1.2](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v1.1.1...v1.1.2) (2026-01-24)
 
 
