@@ -427,6 +427,39 @@ describe("client Service()", () => {
         expect(globalThis.fetch).toHaveBeenCalledWith("/api/v1/services/ping/health", expect.any(Object));
     });
 
+    it("includes current search params in route when config.url is available", () => {
+        const svc = ClientService("ping" as any, {
+            entryPoint: "/api/v1/services",
+            url: new URL("https://example.test/dashboard?foo=bar&baz=1")
+        });
+
+        expect(svc.route("/health", { includeSearchParams: true })).toBe("/api/v1/services/ping/health?foo=bar&baz=1");
+    });
+
+    it("does not append search params when includeSearchParams is enabled without config.url", () => {
+        const svc = ClientService("ping" as any, { entryPoint: "/api/v1/services" });
+
+        expect(svc.route("/health", { includeSearchParams: true })).toBe("/api/v1/services/ping/health");
+    });
+
+    it("merges path search params with current search params using a single query delimiter", () => {
+        const svc = ClientService("ping" as any, {
+            entryPoint: "/api/v1/services",
+            url: new URL("https://example.test/dashboard?foo=bar&baz=1")
+        });
+
+        expect(svc.route("/health?local=1", { includeSearchParams: true })).toBe("/api/v1/services/ping/health?local=1&foo=bar&baz=1");
+    });
+
+    it("preserves relative entrypoints when appending current search params", () => {
+        const svc = ClientService("ping" as any, {
+            entryPoint: "api/v1/services",
+            url: new URL("https://example.test/dashboard?foo=bar")
+        });
+
+        expect(svc.route("/health", { includeSearchParams: true })).toBe("api/v1/services/ping/health?foo=bar");
+    });
+
     it("auto JSON-encodes object body and sets content-type", async () => {
         globalThis.fetch = vi.fn(async (_url: any, init: any) => {
             expect(init.method).toBe("POST");

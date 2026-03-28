@@ -57,6 +57,7 @@ export const publicBaseEntryPoint = env.PUBLIC_SERVICE_ENTRYPOINT ?? '/api/v1/se
  */
 export const Service = (service: PublicServices, config: Partial<{
     entryPoint: string,
+    url: URL
     executor: typeof fetch,
     params: import("@sveltejs/kit").Page['params']
 }> = {}) => {
@@ -72,8 +73,24 @@ export const Service = (service: PublicServices, config: Partial<{
         get entryPoint() {
             return `${entryPoint}/${service}`;
         },
-        route(path: `/${string}`) {
-            return `${this.entryPoint}${path}`
+        route(path: `/${string}`, options:{includeSearchParams: boolean} = {includeSearchParams: false}) {
+            const route = `${this.entryPoint}${path}`;
+            if (!options.includeSearchParams || !config.url) return route;
+
+            const hashIndex = route.indexOf("#");
+            const baseRoute = hashIndex === -1 ? route : route.slice(0, hashIndex);
+            const hash = hashIndex === -1 ? "" : route.slice(hashIndex);
+
+            const queryIndex = baseRoute.indexOf("?");
+            const pathname = queryIndex === -1 ? baseRoute : baseRoute.slice(0, queryIndex);
+            const search = new URLSearchParams(queryIndex === -1 ? "" : baseRoute.slice(queryIndex + 1));
+
+            config.url.searchParams.forEach((value, key) => {
+                search.append(key, value);
+            });
+
+            const query = search.toString();
+            return `${pathname}${query ? `?${query}` : ""}${hash}`;
         },
         raw(route: string, requestInit?: Omit<RequestInit, 'body'> & { body?: object | RequestInit['body'] }) {
             if (requestInit && requestInit.body) {
@@ -86,13 +103,13 @@ export const Service = (service: PublicServices, config: Partial<{
             }
             return executor(`${this.entryPoint}${route}`, requestInit as RequestInit)
         },
-        call<R = any>(route: `/${string}`, data?: object | RequestInit['body'], requestInit?: Omit<RequestInit, 'body'>): Promise<R> {
-            return this.raw(route, {
+        async call<R = any>(route: `/${string}`, data?: object | RequestInit['body'], requestInit?: Omit<RequestInit, 'body'>): Promise<R> {
+            const res = await this.raw(route, {
                 ...requestInit,
                 body: data,
-            })
-                .then(ServiceError.Check)
-                .then((res) => res.json() as Promise<R>)
+            });
+            const res_1 = ServiceError.Check(res);
+            return await res_1.json() as Promise<R>;
         }
     });
 }
