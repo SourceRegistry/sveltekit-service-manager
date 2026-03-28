@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v1.2.0...v1.3.0) (2026-03-28)
+
+
+### Features
+
+* **router:** add client side service route method option to includeSearchParams ([d09eff5](https://github.com/SourceRegistry/sveltekit-service-manager/commit/d09eff5460c3fa05f3fc8bbdf96eabf7de9bd347))
+
 # [1.2.0](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v1.1.2...v1.2.0) (2026-02-25)
 
 
