@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v1.3.0...v1.3.1) (2026-05-06)
+
+
+### Bug Fixes
+
+* deprecated guard in favor of context property. guard will stay until next major release ([2d516ce](https://github.com/SourceRegistry/sveltekit-service-manager/commit/2d516cec87bdca1434dd3113c925c0d80fb19b8c))
+
 # [1.3.0](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v1.2.0...v1.3.0) (2026-03-28)
 
 
