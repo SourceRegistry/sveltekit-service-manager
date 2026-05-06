@@ -1,6 +1,6 @@
-import type { Cookies } from '@sveltejs/kit';
-import type { ServiceRequestEvent } from './../index.js';
-import { isRedirectLike, isHttpErrorLike } from './index.js';
+import type {Cookies} from '@sveltejs/kit';
+import type {ServiceRequestEvent} from './../index.js';
+import {isRedirectLike, isHttpErrorLike} from './index.js';
 
 type MaybePromise<T> = T | Promise<T>;
 
@@ -42,8 +42,8 @@ export type MiddlewareInput<
 export type MiddlewareFunction<
     Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
     RouteId extends string | null = string | null,
-    GuardReturn = any
-> = (event: MiddlewareInput<Params, RouteId>) => MaybePromise<GuardReturn | void | undefined>;
+    Context = any
+> = (event: MiddlewareInput<Params, RouteId>) => MaybePromise<Context | void | undefined>;
 
 /**
  * Final handler that receives the merged guard object on `event.guard`.
@@ -51,8 +51,14 @@ export type MiddlewareFunction<
 export type MiddlewareServiceHandler<
     Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
     RouteId extends string | null = string | null,
-    GuardReturn = any
-> = (event: ServiceRequestEvent<Params, RouteId> & { guard: GuardReturn }) => MaybePromise<Response>;
+    Context = any
+> = (event: ServiceRequestEvent<Params, RouteId> & {
+    /**
+     * @deprecated switch to context
+     */
+    guard: Context,
+    context: Context
+}) => MaybePromise<Response>;
 
 type Func = (...args: any[]) => any;
 
@@ -146,7 +152,15 @@ export const middleware = <
         }
 
         try {
-            return await handle(Object.assign(guardInput, { guard: combined }));
+            return await handle(Object.assign(guardInput, {
+                /**
+                 * @deprecated use context
+                 */
+                get guard() {
+                    console.debug("event.guard is still used, please make sure to switch to context before the next major release");
+                    return combined
+                }, context: combined
+            }));
         } catch (e) {
             return await handleMiddlewareError(e, guardInput);
         }
