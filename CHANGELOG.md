@@ -1,3 +1,10 @@
+## [2.0.1](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v2.0.0...v2.0.1) (2026-05-17)
+
+
+### Bug Fixes
+
+* pipeline and docs ([96e65f5](https://github.com/SourceRegistry/sveltekit-service-manager/commit/96e65f553c0b33e88faf6e62e00b331a92a71fbc))
+
 # [2.0.0](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v1.3.1...v2.0.0) (2026-05-17)
 
 
