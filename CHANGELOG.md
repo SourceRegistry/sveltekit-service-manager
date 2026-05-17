@@ -1,3 +1,13 @@
+# [2.0.0](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v1.3.1...v2.0.0) (2026-05-17)
+
+
+* feat!: harden service manager for production ([5676d0e](https://github.com/SourceRegistry/sveltekit-service-manager/commit/5676d0ec4e2bb8dcb28d8f9fd400832be4ec8e72))
+
+
+### BREAKING CHANGES
+
+* Runtime support now requires Node.js ^20.19.0, ^22.12.0, or >=24.0.0. The Node HTTP adapter now applies stricter host/origin handling and safer cookie defaults for production use.
+
 ## [1.3.1](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v1.3.0...v1.3.1) (2026-05-06)
 
 
