@@ -1,331 +1,300 @@
-# 🔧 @sourceregistry/sveltekit-service-manager
+<div align="center">
 
-[![npm version](https://img.shields.io/npm/v/@sourceregistry/sveltekit-service-manager?logo=npm)](https://www.npmjs.com/package/@sourceregistry/sveltekit-service-manager)
-[![License](https://img.shields.io/npm/l/@sourceregistry/sveltekit-service-manager)](https://github.com/SourceRegistry/sveltekit-service-manager/blob/main/LICENSE)
-[![CI](https://github.com/SourceRegistry/sveltekit-service-manager/actions/workflows/test.yml/badge.svg)](https://github.com/SourceRegistry/sveltekit-service-manager/actions)
-[![Codecov](https://img.shields.io/codecov/c/github/SourceRegistry/sveltekit-service-manager)](https://codecov.io/gh/SourceRegistry/sveltekit-service-manager)
+# @sourceregistry/sveltekit-service-manager
 
-A **minimal, production-oriented service gateway** for **SvelteKit**.
+**A small service gateway, router, and client for SvelteKit backends**
 
-This library provides a structured way to expose backend services through versioned gateway routes while keeping services modular, testable, and HMR-safe.
+[![npm version](https://img.shields.io/npm/v/@sourceregistry/sveltekit-service-manager?style=flat-square&color=f96743)](https://www.npmjs.com/package/@sourceregistry/sveltekit-service-manager)
+[![npm downloads](https://img.shields.io/npm/dm/@sourceregistry/sveltekit-service-manager?style=flat-square)](https://www.npmjs.com/package/@sourceregistry/sveltekit-service-manager)
+[![license](https://img.shields.io/npm/l/@sourceregistry/sveltekit-service-manager?style=flat-square)](./LICENSE)
+[![SvelteKit](https://img.shields.io/badge/SvelteKit-%5E2-FF3E00?style=flat-square&logo=svelte&logoColor=white)](https://kit.svelte.dev)
+[![issues](https://img.shields.io/github/issues/SourceRegistry/sveltekit-service-manager?style=flat-square)](https://github.com/SourceRegistry/sveltekit-service-manager/issues)
 
----
+Expose modular backend services through versioned SvelteKit gateway routes. Keep service routing, lifecycle, internal calls, browser calls, and optional Node middleware adapters in one small package.
 
-## Why this exists
+[Docs](https://sourceregistry.github.io/sveltekit-service-manager/) | [npm](https://www.npmjs.com/package/@sourceregistry/sveltekit-service-manager) | [Issues](https://github.com/SourceRegistry/sveltekit-service-manager/issues)
 
-SvelteKit routes are powerful, but for **larger backends** you often want:
-
-- a **single gateway** (`/api/v1/services/...`)
-- **modular services** with their own routers and lifecycle
-- **internal calls** without HTTP
-- **safe hot reload** during development
-- optional **Express / Node middleware reuse**
-- a **typed client** to call services from the browser
-
-This project solves that without introducing a full framework.
-
----
-
-## Features
-
-- 🚪 Versioned service gateways (`/api/v1/services/<service>/<path…>`)
-- 🔐 Per-gateway **allowlists**
-- 🔁 Clean **Vite HMR** (cleanup + route reset + re-register)
-- 🧭 Fast, typed **service-relative router**
-- 🧠 Internal service calls (no HTTP hop)
-- 🛡️ Middleware guards
-- 🔌 Express / Node middleware compatibility (Fetch adapter)
-- 🌐 Typed **client-side service caller**
-
----
-
-## Project structure
-
-```txt
-├── src
-│   ├── lib
-│   │   ├── client          # Client-side service caller
-│   │   └── server
-│   │       └── helpers
-│   └── routes
-│       └── api
-│           └── v1
-│               └── services
-│                   └── [service_name]
-│                       └── [...catch]
-│                           └── +server.ts
-├── static
-└── tests
-    └── services
-````
+</div>
 
 ---
 
 ## Installation
 
-```bash
-npm i @sourceregistry/sveltekit-service-manager
+```sh
+npm install @sourceregistry/sveltekit-service-manager
 ```
 
-> In this repository you may see `$lib/server/index.js`.
-> In production **always import from the package**.
+**Peer dependency:** `svelte ^5.0.0`
+
+In this repository examples may import from `$lib/server/index.js`. In applications, import from `@sourceregistry/sveltekit-service-manager`.
 
 ---
 
-## Gateway setup
-
-### Example gateway route
-
-`src/routes/api/v1/services/[service_name]/[...catch]/+server.ts`
+## Overview
 
 ```ts
+// src/routes/api/v1/services/[service_name]/[...catch]/+server.ts
 import { ServiceManager } from '@sourceregistry/sveltekit-service-manager';
 
 const { endpoint, access } = ServiceManager.Base(undefined, {
-  accessKey: 'api:v1'
+    accessKey: 'api:v1',
 });
 
 export const { GET, POST, PUT, DELETE, PATCH, HEAD } = endpoint;
 
-// Allow only selected services through this gateway
 access('ping', 'users');
+```
+
+```ts
+// src/lib/server/services/ping.service.ts
+import { Action, Router, ServiceManager, type Service } from '@sourceregistry/sveltekit-service-manager';
+
+const router = Router()
+    .GET('/health', () => Action.success(200, { ok: true }))
+    .GET('/echo/[message]', ({ params }) => Action.success(200, { message: params.message }));
+
+const service = {
+    name: 'ping',
+    route: router,
+} satisfies Service<'ping'>;
+
+export default ServiceManager.Load(service, import.meta);
 ```
 
 This exposes:
 
-```
-/api/v1/services/ping/*
-/api/v1/services/users/*
-```
-
----
-
-## Multiple gateways (public / internal)
-
-Each gateway gets its **own allowlist**, isolated even across HMR:
-
-```ts
-// Public API
-ServiceManager.Base(undefined, { accessKey: 'public' }).access('ping');
-
-// Internal API
-ServiceManager.Base(undefined, { accessKey: 'internal' }).access('admin', 'metrics');
-```
-
----
-
-## Defining a service
-
-### Router-based service (recommended)
-
-```ts
-import { Router, Action, ServiceManager } from '@sourceregistry/sveltekit-service-manager';
-
-const router = Router()
-  .GET('/health', () => Action.success(200, { ok: true }))
-  .GET('/echo/[msg]', ({ params }) =>
-    Action.success(200, { msg: params.msg })
-  );
-
-export const service = {
-  name: 'ping',
-  route: router
-};
-
-export default ServiceManager
-  .Load(service, import.meta)
-  .finally(() => console.log('[Service]', `[${service.name}]`, 'Loaded'));
-```
-
-Accessible via:
-
-```
+```txt
 /api/v1/services/ping/health
 /api/v1/services/ping/echo/hello
 ```
 
 ---
 
-## Hot Module Reloading (HMR)
+## Core API
 
-When loading a service with:
+Import server utilities from `@sourceregistry/sveltekit-service-manager` or `@sourceregistry/sveltekit-service-manager/server`.
+
+### `ServiceManager.Base`
+
+Creates SvelteKit request handlers for a gateway route. The default selector reads `event.params.service_name`, which matches `[service_name]`.
 
 ```ts
-ServiceManager.Load(service, import.meta)
+import { ServiceManager } from '@sourceregistry/sveltekit-service-manager';
+
+const { endpoint, access } = ServiceManager.Base(undefined, {
+    accessKey: 'public',
+});
+
+export const { GET, POST, PUT, DELETE, PATCH, HEAD } = endpoint;
+
+access('ping', 'status');
 ```
 
-The following happens automatically during Vite HMR:
+Use a stable `accessKey` for each gateway. Allow-lists are stored on the singleton service manager so they survive Vite HMR recreations.
 
-1. `cleanup()` is called (if defined)
-2. Router routes are **fully reset**
-3. Service is unregistered
-4. Updated module is reloaded
-5. Routes are re-registered
+Requests for unknown services and blocked services both fail as inaccessible. This avoids exposing which service names are registered.
 
-This prevents:
+### `ServiceManager.Load`
 
-* duplicate routes
-* stale handlers
-* memory leaks
-
----
-
-## Middleware guards
-
-Compose guards and pass combined state to handlers:
+Registers a service definition and wires Vite HMR cleanup when `import.meta` is passed.
 
 ```ts
-import { middleware, Action } from '@sourceregistry/sveltekit-service-manager';
+import { ServiceManager, Router } from '@sourceregistry/sveltekit-service-manager';
+
+const service = {
+    name: 'users',
+    route: Router().GET('/me', ({ locals }) => Response.json({ user: locals.user })),
+    cleanup: async () => {
+        // close timers, workers, sockets, or pools owned by this service
+    },
+};
+
+export default ServiceManager.Load(service, import.meta);
+```
+
+During HMR, `cleanup()` runs, router routes are reset, the old service is unregistered, and the updated module can register fresh handlers.
+
+### `Router`
+
+Creates a service-relative router. Routes use SvelteKit-style segments: static paths, `[param]`, and `[...catchAll]`.
+
+```ts
+import { Action, Router } from '@sourceregistry/sveltekit-service-manager';
+
+export const router = Router()
+    .GET('/health', () => Action.success(200, { ok: true }))
+    .POST('/users/[id]', ({ params }) => Action.success(200, { updated: params.id }))
+    .GET('/files/[...path]', ({ params }) => Action.success(200, { path: params.path }));
+```
+
+Supported methods: `GET`, `PUT`, `POST`, `DELETE`, `HEAD`, `PATCH`, `OPTIONS`. `USE(path, handler, methods?)` registers one handler for multiple methods.
+
+### Nested routers
+
+```ts
+const users = Router().GET('/profile', ({ params }) => Action.success(200, { userId: params.id }));
+
+const api = Router().use('/users/[id]', users);
+```
+
+`/users/42/profile` reaches the nested router with `params.id === '42'`.
+
+### Pre and post hooks
+
+```ts
+const router = Router()
+    .pre((event) => {
+        const token = event.cookies.get('token');
+        if (!token) return Action.error(401, { message: 'Unauthorized' } as any);
+
+        return {
+            ...event,
+            locals: { ...event.locals, token },
+        } as any;
+    })
+    .GET('/private', ({ locals }) => Action.success(200, { token: (locals as any).token }))
+    .post((_event, response) => {
+        const headers = new Headers(response.headers);
+        headers.set('x-service-router', '1');
+        return new Response(response.body, { status: response.status, headers });
+    });
+```
+
+Keep hooks small. Use `pre` for auth, tenant, actor, tracing, and maintenance stops. Use `post` for response metadata and shaping.
+
+### `middleware`
+
+Composes guard functions with a final service handler. Guard return objects are merged into `context` and the deprecated `guard` alias.
+
+```ts
+import { Action, middleware } from '@sourceregistry/sveltekit-service-manager';
 
 const requireAuth = async ({ cookies }) => {
-  const token = cookies.get('token');
-  if (!token) throw Action.error(401, { message: 'Unauthorized' } as any);
-  return { token };
+    const token = cookies.get('token');
+    if (!token) throw Action.error(401, { message: 'Unauthorized' } as any);
+    return { token };
 };
 
-export const service = {
-  name: 'users',
-  route: middleware(
-    async ({ guard }) => Action.success(200, { token: guard.token }),
-    requireAuth
-  )
-};
+export const route = middleware(
+    async ({ context }) => Action.success(200, { token: context.token }),
+    requireAuth,
+);
 ```
 
----
+Only real SvelteKit HTTP errors and redirects are treated as framework control flow. Other thrown values go through middleware error handlers or are rethrown.
 
-## Router pre/post hooks
+### `Service`
 
-`ServiceRouter` supports request lifecycle hooks:
-
-```ts
-import { Router, Action } from '@sourceregistry/sveltekit-service-manager';
-
-const router = Router()
-  .pre((event) => {
-    // pre can:
-    // - return void to continue
-    // - return a new event to replace current context
-    // - return Response to short-circuit
-    return {
-      ...event,
-      locals: { ...event.locals, requestId: crypto.randomUUID() }
-    } as any;
-  })
-  .GET('/health', ({ locals }) =>
-    Action.success(200, { requestId: (locals as any).requestId })
-  )
-  .post((_event, response) => {
-    // post can observe/replace the outgoing response
-    const headers = new Headers(response.headers);
-    headers.set('x-service-router-post', '1');
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers
-    });
-  });
-```
-
-Best practices:
-
-* Keep hooks small and deterministic (auth context, tracing, audit headers).
-* Prefer returning a `Response` from `pre` only for hard stops (auth/maintenance).
-* Avoid expensive I/O in hooks; call service handlers for business logic.
-* Use `post` for response shaping/metadata, not core request routing.
-
----
-
-## Production checklist
-
-Keep this simple and consistent for production:
-
-* Set explicit gateway allowlists with stable `accessKey` values per gateway.
-* Add `pre` hooks for auth and request context (request-id, tenant, actor).
-* Add `post` hooks for response metadata (trace headers, cache policy).
-* Prefer explicit route methods (`GET/POST/...`) and rely on built-in `405` + `Allow` behavior.
-* Use service `cleanup()` for released resources (timers, sockets, workers).
-* Keep `ServiceManager.Load(service, import.meta)` in service modules for safe HMR in development.
-* Log internal errors server-side; return normalized client-safe error bodies.
-* Add tests for auth paths, method restrictions, and nested router routing.
-
----
-
-## Internal service calls (no HTTP)
-
-If a service defines `local`, you can call it directly:
+Calls a service-local function or returns a local value without HTTP.
 
 ```ts
 import { Service } from '@sourceregistry/sveltekit-service-manager';
 
-const value = Service('ping');
+const user = await Service('users', 'current');
 ```
 
-This is fully typed via `App.Services`.
+The call is typed through `App.Services`.
 
 ---
 
-## Client-side usage
+## Client API
 
-The client helper provides a **typed, ergonomic way** to call public services.
+Import browser/client utilities from `@sourceregistry/sveltekit-service-manager/client`.
 
-### Basic usage
+### `Service(name, config?)`
+
+Creates a typed browser caller for public services.
 
 ```ts
-import {Service} from "@sourceregistry/sveltekit-service-manager";
+import { Service } from '@sourceregistry/sveltekit-service-manager/client';
 
 const ping = Service('ping');
 
 const result = await ping.call('/health');
 ```
 
-### With route helpers
+#### Route building
 
 ```ts
-ping.route('/health'); // "/api/v1/services/ping/health"
+ping.route('/health'); // /api/v1/services/ping/health
 ```
 
-### POST with JSON body
+To include the current page search params, pass the current URL:
+
+```ts
+const ping = Service('ping', { url });
+
+ping.route('/health', { includeSearchParams: true });
+```
+
+#### POST JSON
 
 ```ts
 await ping.call('/echo', { message: 'hello' });
 ```
 
----
+Passing a body defaults the method to `POST`, JSON-serializes plain objects, and sets `content-type: application/json`.
 
-## Client error handling
-
-Errors throw a `ServiceError`:
+#### Custom entrypoint or fetch
 
 ```ts
+const ping = Service('ping', {
+    entryPoint: '/api/v1/services',
+    executor: fetch,
+});
+```
+
+Entrypoints with `[param]` or `[...param]` placeholders are resolved from `config.params`.
+
+### `ServiceError`
+
+Failed calls throw `ServiceError`.
+
+```ts
+import { ServiceError } from '@sourceregistry/sveltekit-service-manager/client';
+
 try {
-  await ping.call('/fail');
-} catch (e) {
-  if (e instanceof ServiceError) {
-    console.error(e.code);     // HTTP status
-    console.error(e.data);     // parsed JSON or text
-  }
+    await ping.call('/private');
+} catch (error) {
+    if (error instanceof ServiceError) {
+        console.error(error.code);
+        console.error(error.data);
+    }
 }
 ```
 
 ---
 
-## Custom entrypoint or fetch
+## Response Helpers
 
 ```ts
-Service('ping', {
-  entryPoint: '/api/v1/services',
-  executor: fetch
-});
+import { Action, error, fail, file, json, text } from '@sourceregistry/sveltekit-service-manager';
+
+Action.success(200, { ok: true });
+Action.fail(400, { field: 'email' });
+Action.error(401, { message: 'Unauthorized' } as any);
+Action.redirect(302, '/login');
+
+json({ ok: true });
+text('hello');
+file(blob, { mode: 'attachment', filename: 'report.csv' });
+fail({ message: 'Bad request' }, { status: 400 });
+error({ message: 'Internal error' }, { status: 500 });
 ```
 
-Supports dynamic `[param]` resolution using `Page.params`.
+Security-sensitive behavior:
+
+- `json()` and `text()` set `Content-Length` from UTF-8 byte length.
+- `file()` sanitizes the fallback `filename` value and emits `filename*` for encoded names.
+- `Action.*` responses use JSON bodies with a `type` and `status` field.
 
 ---
 
-## Express / Node middleware integration
+## Node Adapters
 
-You can run Express (or similar) inside a service:
+### `Proxy`
+
+Runs a Node-style request listener, such as an Express app, inside a Fetch/SvelteKit service route.
 
 ```ts
 import express from 'express';
@@ -337,9 +306,83 @@ app.get('/hello', (_req, res) => res.json({ hello: 'world' }));
 const proxy = new Proxy(app);
 
 export const service = {
-  name: 'express-demo',
-  route: (event) => proxy.handle(event)
+    name: 'express-demo',
+    route: (event) => proxy.handle(event),
 };
+```
+
+### `Server`
+
+Runs a `Router` or request handler as a standalone HTTP/HTTPS server.
+
+```ts
+import { Router, Server } from '@sourceregistry/sveltekit-service-manager';
+
+const router = Router().GET('/health', () => new Response('ok'));
+
+new Server(
+    {
+        router,
+        origin: 'https://api.example.com',
+        allowedHosts: ['api.example.com'],
+    },
+    { type: 'http' },
+).listen(3000);
+```
+
+Standalone server hardening:
+
+- malformed `Host` headers are rejected;
+- `allowedHosts` restricts accepted hostnames;
+- `origin` pins `event.url` to a trusted origin;
+- cookies default to `httpOnly: true`, `sameSite: 'lax'`, and `secure: true` outside localhost. Callers may override these options explicitly.
+
+---
+
+## Production Guidance
+
+- Use explicit gateway allow-lists with stable `accessKey` values.
+- Add auth in router `pre` hooks or `middleware` guards.
+- Use route methods deliberately and rely on built-in `405` and `Allow` responses.
+- Keep service `load()` side-effect-light and release resources in `cleanup()`.
+- Use `Service()` for internal in-process calls when HTTP is unnecessary.
+- For standalone servers, configure `origin` and `allowedHosts`.
+- Add tests for access control, method restrictions, auth failures, and nested routing.
+- Keep dependency audit clean in CI.
+
+---
+
+## Type Reference
+
+```ts
+// Gateway and service management
+ServiceManager.Base(selector?, options?)
+ServiceManager.Load(service, importMeta?)
+ServiceManager.Reload(name)
+ServiceManager.Internal(name, ...args)
+
+// Router
+Router()
+ServiceRouter
+RouteHandler<Path>
+PreRouteHandler
+PostRouteHandler
+RequestMethods
+
+// Service contracts
+Service<T, Args, Local>
+ServiceHandler<Params, RouteId>
+ServiceRequestEvent<Params, RouteId>
+ServiceEndpoint
+
+// Client
+Service(name, config?)
+ServiceError
+PublicServices
+
+// Node adapters
+Proxy
+Server
 ```
 
 ---
@@ -348,33 +391,32 @@ export const service = {
 
 ### Server
 
-* `ServiceManager`
-* `ServiceRouter` / `Router`
-* `Service` (internal call)
-* `Action`
-* `middleware`
-* `Server` (WebHTTPServer)
-* `Proxy` (WebProxyServer)
-* `json`, `text`, `html`, `file`, `fail`, `error`
+- `ServiceManager`
+- `ServiceRouter` / `Router`
+- `Service` for internal calls
+- `Action`
+- `middleware`
+- `Server`
+- `Proxy`
+- `json`, `text`, `html`, `file`, `fail`, `error`
 
 ### Client
 
-* `Service`
-* `ServiceError`
-* `PublicServices`
+- `Service`
+- `ServiceError`
+- `PublicServices`
 
 ---
 
 ## Testing
 
-```bash
+```sh
 npm test
+npm run check
 ```
-
-Tests live in `tests/services`.
 
 ---
 
 ## License
 
-Apache 2.0 see LICENSE
+[Apache-2.0](./LICENSE) (c) [A.P.A. Slaa](https://github.com/SourceRegistry)

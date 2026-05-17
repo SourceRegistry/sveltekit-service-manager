@@ -563,9 +563,8 @@ class WebProxyServerResponse<Request extends IncomingMessage = IncomingMessage> 
         if (impl.headersSent) throw new Error('Cannot append headers after they are sent');
 
         const lower = name.toLowerCase();
-        const existing = impl.headers[lower];
-
         const add = (v: string) => {
+            const existing = impl.headers[lower];
             if (existing === undefined) impl.headers[lower] = v;
             else if (Array.isArray(existing)) (existing as any).push(v);
             else impl.headers[lower] = [existing as any, v];

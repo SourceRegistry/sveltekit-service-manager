@@ -31,3 +31,4 @@ vite.config.ts.timestamp-*
 # Documentation
 generated
 .npmrc
+coverage

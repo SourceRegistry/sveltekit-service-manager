@@ -8,18 +8,19 @@ export type Range<F extends number, T extends number> = Exclude<Enumerate<T>, En
  * Create a JSON response.
  *
  * Notes:
- * - Does not set Content-Length (byte length is runtime-dependent; let the platform handle it)
+ * - Sets Content-Length using UTF-8 byte length
  * - Safely handles null/undefined and objects with toJSON()
  */
 export const json = (data: unknown, init: ResponseInit = {}): Response => {
-    const body =
+    const serialized =
         data != null && typeof data === 'object' && 'toJSON' in (data as any) && typeof (data as any).toJSON === 'function'
             ? JSON.stringify((data as any).toJSON())
             : JSON.stringify(data);
+    const body = serialized === undefined ? 'null' : serialized;
 
     const headers = new Headers(init.headers);
     if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-    if (!headers.has('Content-Length') && body.length > 0) headers.set('Content-Length', String(body.length));
+    if (!headers.has('Content-Length') && body.length > 0) headers.set('Content-Length', String(new TextEncoder().encode(body).byteLength));
 
     return new Response(body, {
         ...init,
@@ -31,13 +32,13 @@ export const json = (data: unknown, init: ResponseInit = {}): Response => {
  * Create a text/plain response.
  *
  * Notes:
- * - Does not set Content-Length (byte length differs from .length for UTF-8)
+ * - Sets Content-Length using UTF-8 byte length
  */
 export const text = (data: string | { toString(): string }, init: ResponseInit = {}): Response => {
     const body = data.toString();
     const headers = new Headers(init.headers);
     if (!headers.has('Content-Type')) headers.set('Content-Type', 'text/plain; charset=utf-8');
-    if (!headers.has('Content-Length') && body.length > 0) headers.set('Content-Length', String(body.length));
+    if (!headers.has('Content-Length') && body.length > 0) headers.set('Content-Length', String(new TextEncoder().encode(body).byteLength));
 
     return new Response(body, {
         ...init,
@@ -62,10 +63,22 @@ export const file = (
 
     if (init.mode === 'inline') {
         headers.set('Content-Type', init.contentType);
-        if (init.filename) headers.set('Content-Disposition', `inline; filename="${init.filename}"`);
+        if (init.filename) {
+            const fallbackFilename = init.filename
+                .replace(/[\r\n"\\]/g, '_')
+                .replace(/[^\x20-\x7E]/g, '_')
+                .replace(/[\\/]/g, '_');
+            const encodedFilename = encodeURIComponent(init.filename).replace(/['()]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+            headers.set('Content-Disposition', `inline; filename="${fallbackFilename}"; filename*=UTF-8''${encodedFilename}`);
+        }
     } else {
         headers.set('Content-Type', init.contentType || 'application/octet-stream');
-        headers.set('Content-Disposition', `attachment; filename="${init.filename}"`);
+        const fallbackFilename = init.filename
+            .replace(/[\r\n"\\]/g, '_')
+            .replace(/[^\x20-\x7E]/g, '_')
+            .replace(/[\\/]/g, '_');
+        const encodedFilename = encodeURIComponent(init.filename).replace(/['()]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+        headers.set('Content-Disposition', `attachment; filename="${fallbackFilename}"; filename*=UTF-8''${encodedFilename}`);
     }
 
     return new Response(data, {

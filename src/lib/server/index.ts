@@ -1125,9 +1125,17 @@ export class ServiceManager {
 
         const handle: RequestHandler = async (event) => {
             try {
-                const service = await serviceSelector(event);
+                let service: Service;
+                try {
+                    service = await serviceSelector(event);
+                } catch (err) {
+                    if (isHttpError(err) && err.status === 404) {
+                        throw error(403, {message: 'Service is not accessible'});
+                    }
+                    throw err;
+                }
 
-                if (!accessList.has(service.name)) throw error(403, {message: `Service '${service.name}' is not accessible`});
+                if (!accessList.has(service.name)) throw error(403, {message: 'Service is not accessible'});
 
                 if (!service.route) throw error(503, {message: `Service '${service.name}' has no route handler`});
 
@@ -1309,7 +1317,7 @@ export const Proxy = WebProxyServer;
 /** Export middleware helper. */
 export const middleware = mWare;
 
-export {fail, error, json, text, file, isHttpErrorLike, isRedirectLike} from './helpers/index.js';
+export {fail, error, json, text, html, file, isHttpErrorLike, isRedirectLike} from './helpers/index.js';
 export type * from './helpers/index.js';
 
 export type Server = InstanceType<typeof Server>;

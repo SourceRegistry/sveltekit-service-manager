@@ -22,13 +22,13 @@ import {ServiceRouter} from '../index.js';
  * Reads cookies from the incoming Request and collects Set-Cookie values for the outgoing response.
  */
 export class Cookies implements SVCookie {
-    private readonly requestCookies: Record<string, string>;
-    private readonly setCookieHeader: (name: string, value: string, opts: cookie.CookieSerializeOptions) => void;
+    private readonly requestCookies: Record<string, string | undefined>;
+    private readonly setCookieHeader: (name: string, value: string, opts: cookie.SerializeOptions) => void;
 
     constructor(
         request: Request,
-        setCookieHeader: (name: string, value: string, opts: cookie.CookieSerializeOptions) => void,
-        options?: cookie.CookieParseOptions
+        setCookieHeader: (name: string, value: string, opts: cookie.SerializeOptions) => void,
+        options?: cookie.ParseOptions
     ) {
         const cookieHeader = request.headers.get('cookie') ?? '';
         this.requestCookies = cookie.parse(cookieHeader, options);
@@ -40,18 +40,20 @@ export class Cookies implements SVCookie {
     }
 
     getAll(): { name: string; value: string }[] {
-        return Object.entries(this.requestCookies).map(([name, value]) => ({ name, value }));
+        return Object.entries(this.requestCookies)
+            .filter((entry): entry is [string, string] => entry[1] !== undefined)
+            .map(([name, value]) => ({ name, value }));
     }
 
-    set(name: string, value: string, opts: cookie.CookieSerializeOptions & { path: string }): void {
+    set(name: string, value: string, opts: cookie.SerializeOptions & { path: string }): void {
         this.setCookieHeader(name, value, opts);
     }
 
-    delete(name: string, opts: cookie.CookieSerializeOptions & { path: string }): void {
+    delete(name: string, opts: cookie.SerializeOptions & { path: string }): void {
         this.set(name, '', { ...opts, maxAge: 0 });
     }
 
-    serialize(name: string, value: string, opts: cookie.CookieSerializeOptions & { path: string }): string {
+    serialize(name: string, value: string, opts: cookie.SerializeOptions & { path: string }): string {
         return cookie.serialize(name, value, opts);
     }
 }
@@ -80,6 +82,14 @@ export type ServerConfig = HttpServerConfig | HttpsServerConfig;
 export type HandlerConfig = {
     locals?: (event: RequestEvent) => App.Locals | Record<string, any>;
     platform?: (event: RequestEvent) => App.Platform | Record<string, any>;
+    /**
+     * Pin event.url to a trusted origin instead of deriving it from the Host header.
+     */
+    origin?: string | URL;
+    /**
+     * Allow only these Host header values. Entries may include a port.
+     */
+    allowedHosts?: readonly string[];
 } & (
     | {
     request: (event: RequestEvent) => Promise<Response> | Response;
@@ -251,7 +261,20 @@ export class WebHTTPServer<TServerConfig extends ServerConfig = HttpServerConfig
         const host = req.headers.host ?? 'localhost';
         const url = req.url ?? '/';
 
-        const fullUrl = `${protocol}://${host}${url}`;
+        if (Array.isArray(host) || /[\s/@\\]/.test(host)) {
+            throw new Error('Invalid Host header');
+        }
+
+        const hostURL = new URL(`${protocol}://${host}/`);
+        if (this.handlers.allowedHosts?.length && !this.handlers.allowedHosts.includes(hostURL.host) && !this.handlers.allowedHosts.includes(hostURL.hostname)) {
+            throw new Error('Host header is not allowed');
+        }
+
+        const requestURL = new URL(url, hostURL);
+        const requestPath = `${requestURL.pathname}${requestURL.search}`;
+        const fullUrl = this.handlers.origin
+            ? new URL(requestPath, new URL(String(this.handlers.origin))).toString()
+            : new URL(requestPath, hostURL).toString();
 
         const headers = new Headers();
         for (const [key, value] of Object.entries(req.headers)) {
@@ -354,8 +377,14 @@ export class WebHTTPServer<TServerConfig extends ServerConfig = HttpServerConfig
             };
         }
     ): RequestEvent<{}, null> {
-        const cookieSetter = (name: string, value: string, opts: cookie.CookieSerializeOptions) => {
-            const serialized = cookie.serialize(name, value, opts);
+        const requestUrl = new URL(request.url);
+        const cookieSetter = (name: string, value: string, opts: cookie.SerializeOptions) => {
+            const serialized = cookie.serialize(name, value, {
+                httpOnly: true,
+                sameSite: 'lax',
+                secure: !['localhost', '127.0.0.1', '::1', '[::1]'].includes(requestUrl.hostname),
+                ...opts
+            });
             utils.pushSetCookie(serialized);
         };
 
@@ -370,7 +399,7 @@ export class WebHTTPServer<TServerConfig extends ServerConfig = HttpServerConfig
             tracing: {current: undefined, enabled: false, root: undefined},
             cookies,
             request,
-            url: new URL(request.url),
+            url: requestUrl,
             fetch: globalThis.fetch,
             getClientAddress: utils.getClientAddress,
             get locals() {
