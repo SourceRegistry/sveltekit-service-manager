@@ -1,3 +1,10 @@
+## [2.0.4](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v2.0.3...v2.0.4) (2026-05-19)
+
+
+### Bug Fixes
+
+* added url() method to client Service module so also a full url can be obtained to the service route ([603509c](https://github.com/SourceRegistry/sveltekit-service-manager/commit/603509c27748d83adb867776e006d7d6ddeba092))
+
 ## [2.0.3](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v2.0.2...v2.0.3) (2026-05-17)
 
 
