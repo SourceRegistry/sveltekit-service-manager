@@ -4,6 +4,11 @@ export type PublicServices = {
     [K in keyof App.Services]: 'route' extends keyof App.Services[K] ? K : never;
 }[keyof App.Services];
 
+export type ServiceRouteOptions = Partial<{
+    includeSearchParams: boolean,
+    fullUrl: boolean
+}>;
+
 export class ServiceError extends Error {
 
     get name() {
@@ -69,14 +74,14 @@ export const Service = (service: PublicServices, config: Partial<{
         )
     }
     if (entryPoint.includes("[")) throw `Client service call requires params to resolve '${entryPoint}'.`
-    return ({
-        get entryPoint() {
-            return `${entryPoint}/${service}`;
-        },
-        route(path: `/${string}`, options:{includeSearchParams: boolean} = {includeSearchParams: false}) {
-            const route = `${this.entryPoint}${path}`;
-            if (!options.includeSearchParams || !config.url) return route;
 
+    const _entryPoint = `${entryPoint}/${service}`
+
+    const _route = (path: `/${string}`, options: ServiceRouteOptions = {}) => {
+        const route = `${_entryPoint}${path}`;
+        let resolvedRoute = route;
+
+        if (options.includeSearchParams && config.url) {
             const hashIndex = route.indexOf("#");
             const baseRoute = hashIndex === -1 ? route : route.slice(0, hashIndex);
             const hash = hashIndex === -1 ? "" : route.slice(hashIndex);
@@ -90,7 +95,24 @@ export const Service = (service: PublicServices, config: Partial<{
             });
 
             const query = search.toString();
-            return `${pathname}${query ? `?${query}` : ""}${hash}`;
+            resolvedRoute = `${pathname}${query ? `?${query}` : ""}${hash}`;
+        }
+
+        if (!options.fullUrl) return resolvedRoute;
+        if (!config.url) throw "config.url must be a valid URL."
+        return new URL(resolvedRoute, config.url.origin).href;
+    }
+
+    return ({
+        get entryPoint() {
+            return _entryPoint;
+        },
+        route(path: `/${string}`, options: ServiceRouteOptions = {}) {
+            return _route(path,options);
+        },
+        url(path: `/${string}`, options: Omit<ServiceRouteOptions, 'fullUrl'> = {}): URL {
+            if (!config.url) throw "config.url must be a valid URL."
+            return new URL(_route(path, {...options, fullUrl: false}), config.url.origin);
         },
         raw(route: string, requestInit?: Omit<RequestInit, 'body'> & { body?: object | RequestInit['body'] }) {
             if (requestInit && requestInit.body) {

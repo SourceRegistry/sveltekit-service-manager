@@ -612,6 +612,52 @@ describe("client Service()", () => {
         expect(svc.route("/health", { includeSearchParams: true })).toBe("api/v1/services/ping/health?foo=bar");
     });
 
+    it("can return a full route url as a string", () => {
+        const svc = ClientService("ping" as any, {
+            entryPoint: "/api/v1/services",
+            url: new URL("https://example.test/dashboard?foo=bar")
+        });
+
+        expect(svc.route("/health", { fullUrl: true })).toBe("https://example.test/api/v1/services/ping/health");
+    });
+
+    it("can return a full route url string with merged search params", () => {
+        const svc = ClientService("ping" as any, {
+            entryPoint: "/api/v1/services",
+            url: new URL("https://example.test/dashboard?foo=bar&baz=1")
+        });
+
+        expect(svc.route("/health?local=1", { includeSearchParams: true, fullUrl: true })).toBe(
+            "https://example.test/api/v1/services/ping/health?local=1&foo=bar&baz=1"
+        );
+    });
+
+    it("requires config.url when route fullUrl is requested", () => {
+        const svc = ClientService("ping" as any, { entryPoint: "/api/v1/services" });
+
+        expect(() => svc.route("/health", { fullUrl: true })).toThrow();
+    });
+
+    it("builds absolute service urls without leaking current search params", () => {
+        const svc = ClientService("ping" as any, {
+            entryPoint: "/api/v1/services",
+            url: new URL("https://example.test/dashboard?foo=bar")
+        });
+
+        expect(svc.url("/health").href).toBe("https://example.test/api/v1/services/ping/health");
+    });
+
+    it("builds absolute service urls with merged search params", () => {
+        const svc = ClientService("ping" as any, {
+            entryPoint: "/api/v1/services",
+            url: new URL("https://example.test/dashboard?foo=bar&baz=1")
+        });
+
+        expect(svc.url("/health?local=1", { includeSearchParams: true }).href).toBe(
+            "https://example.test/api/v1/services/ping/health?local=1&foo=bar&baz=1"
+        );
+    });
+
     it("resolves dynamic entrypoint params", () => {
         const svc = ClientService("ping" as any, {
             entryPoint: "/api/[tenant]/services/[...rest]",
