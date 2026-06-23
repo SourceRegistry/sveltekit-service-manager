@@ -1,3 +1,10 @@
+## [2.0.5](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v2.0.4...v2.0.5) (2026-06-23)
+
+
+### Bug Fixes
+
+* close HMR reload gap that caused spurious 403s on service routes ([39ae601](https://github.com/SourceRegistry/sveltekit-service-manager/commit/39ae601d612334ebfd790bc4ede6ae7a34f61c0d))
+
 ## [2.0.4](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v2.0.3...v2.0.4) (2026-05-19)
 
 
