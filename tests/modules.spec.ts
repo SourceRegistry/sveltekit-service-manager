@@ -456,12 +456,15 @@ describe("ServiceManager.Load HMR integration", () => {
 
         await loadService(serviceV1, { hot } as any);
 
-        // grab dispose callback and run it
+        // grab dispose callback and run it — dispose must NOT unregister/cleanup eagerly,
+        // otherwise the service is gone from the registry for the entire window until
+        // accept resolves (the bug this test now guards against).
         const disposeCb = hot.dispose.mock.calls[0]?.[0];
         expect(typeof disposeCb).toBe("function");
         await disposeCb({ serviceName: name });
 
-        expect(cleaned).toBe(true);
+        expect(cleaned).toBe(false);
+        expect(await (await serviceV1.route.handle(mockServiceEvent("/v"))).text()).toBe("v1");
 
         // Now simulate accept callback: your implementation accepts updated module and re-loads
         const acceptCb = hot.accept.mock.calls[0]?.[0];
@@ -469,6 +472,8 @@ describe("ServiceManager.Load HMR integration", () => {
 
         const serviceV2 = { ...serviceV1, route: Router().GET("/v", () => new Response("v2")) };
         await acceptCb({ default: serviceV2 });
+
+        expect(cleaned).toBe(true);
 
         // After accept, service is loaded again; resolve via gateway
         const { endpoint, access } = ServiceManager.Base(undefined, { accessKey: uid("gw") });

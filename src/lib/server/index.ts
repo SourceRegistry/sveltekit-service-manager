@@ -930,6 +930,12 @@ export class ServiceManager {
 
     private readonly accessLists = new Map<string, Set<string>>();
 
+    /**
+     * HMR-only: gates for services currently mid-reload (dispose has run / about to run,
+     * replacement not yet registered). Lets gateway requests wait instead of 404/403'ing.
+     */
+    private readonly reloadGates = new Map<string, Promise<void>>();
+
     private getAccessList(key: string): Set<string> {
         let set = this.accessLists.get(key);
         if (!set) {
@@ -1013,23 +1019,41 @@ export class ServiceManager {
             // Store the service name in hot data so disposal can clean it
             hot.data.serviceName = _service.name;
 
-            // When this module is replaced, always cleanup + unregister routes
-            hot.dispose(async (data: any) => {
-                const name = data?.serviceName as string | undefined;
-                if (name) await ServiceManager.Reload(name);
+            // NOTE: dispose runs synchronously the moment Vite invalidates this module
+            // (i.e. as soon as the file is saved), while accept only resolves once the
+            // replacement module has finished recompiling — a real wall-clock gap. So we
+            // must NOT unregister the service here; doing so would leave the gateway with
+            // no entry for this service name for the entire recompile window, turning every
+            // in-flight request into a spurious 404/403. Reload + unregister happens in
+            // accept instead, right before the replacement is ready, and is gated so any
+            // request racing that tiny window waits instead of erroring.
+            hot.dispose(() => {
             });
 
             // When the module updates, accept it and re-load the updated default export
             hot.accept(async (newModule: any) => {
-                // newModule is the updated module namespace (or undefined)
-                await ServiceManager.Reload(_service.name);
+                const name = _service.name;
 
-                const next = newModule?.default ?? newModule;
-                // Support either:
-                //  - export default await ServiceManager.Load(...)
-                //  - export default ServiceManager.Load(...).finally(...)
-                //  - export default { name, route, ... }
-                await ServiceManager.Load(next, module);
+                let release: () => void = () => {
+                };
+                instance.reloadGates.set(name, new Promise<void>((resolve) => {
+                    release = resolve;
+                }));
+
+                try {
+                    // newModule is the updated module namespace (or undefined)
+                    await ServiceManager.Reload(name);
+
+                    const next = newModule?.default ?? newModule;
+                    // Support either:
+                    //  - export default await ServiceManager.Load(...)
+                    //  - export default ServiceManager.Load(...).finally(...)
+                    //  - export default { name, route, ... }
+                    await ServiceManager.Load(next, module);
+                } finally {
+                    instance.reloadGates.delete(name);
+                    release();
+                }
             });
         }
 
@@ -1076,26 +1100,45 @@ export class ServiceManager {
      * Helpers to select a service name from params or querystring.
      */
     static readonly ServiceSelector = {
-        params: (name: string = 'service_name') => (event: RequestEvent): Service => {
+        params: (name: string = 'service_name') => async (event: RequestEvent): Promise<Service> => {
             // @ts-ignore
             const serviceName = event.params[name];
             if (!serviceName) throw error(400, {message: `Service parameter '${name}' is required`});
 
-            const service = ServiceManager.instance.services.get(serviceName);
+            const service = await ServiceManager.resolveService(serviceName);
             if (!service) throw error(404, {message: `Service '${serviceName}' not found`});
 
             return service;
         },
-        query: (name: string = 'service_name') => (event: RequestEvent): Service => {
+        query: (name: string = 'service_name') => async (event: RequestEvent): Promise<Service> => {
             const serviceName = event.url.searchParams.get(name);
             if (!serviceName) throw error(400, {message: `Service query parameter '${name}' is required`});
 
-            const service = ServiceManager.instance.services.get(serviceName);
+            const service = await ServiceManager.resolveService(serviceName);
             if (!service) throw error(404, {message: `Service '${serviceName}' not found`});
 
             return service;
         }
     };
+
+    /**
+     * Look up a service by name, waiting out an in-progress HMR reload (dev only) instead
+     * of treating the gap as "service doesn't exist".
+     */
+    private static async resolveService(serviceName: string): Promise<Service | undefined> {
+        const instance = ServiceManager.instance;
+
+        let service = instance.services.get(serviceName);
+        if (service) return service;
+
+        const gate = instance.reloadGates.get(serviceName);
+        if (gate) {
+            await gate;
+            service = instance.services.get(serviceName);
+        }
+
+        return service;
+    }
 
     /**
      * Create a gateway endpoint for SvelteKit route files.
