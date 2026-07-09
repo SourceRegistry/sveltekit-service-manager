@@ -1,4 +1,5 @@
-import type {Cookies} from '@sveltejs/kit';
+import type {Cookies, RequestEvent} from '@sveltejs/kit';
+import type {RouteId as AppRouteId, LayoutParams as AppLayoutParams} from '$app/types';
 import type {ServiceRequestEvent} from './../index.js';
 import {isRedirectLike, isHttpErrorLike} from './index.js';
 
@@ -16,12 +17,17 @@ export type MiddlewareErrorHandler = (err: unknown) => MaybePromise<Response | v
 /**
  * Common input shape exposed to middleware functions.
  *
- * This intentionally mirrors key parts of SvelteKit's RequestEvent plus extra metadata.
+ * Mirrors sveltekit-enhance's `EnhanceInput` generics (same `Params`/`RouteId` bounds,
+ * extends SvelteKit's `RequestEvent`) so middleware/enhancer functions written against
+ * either library are interchangeable. `RouteId` is left generic here and only bound by
+ * whatever calls into it (e.g. {@link MiddlewareFunction}, {@link middleware}), so the
+ * route id flows down from the caller instead of being fixed at `'/'`.
  */
 export type MiddlewareInput<
-    Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
-    RouteId extends string | null = string | null
-> = {
+    Params extends AppLayoutParams<'/'> = AppLayoutParams<'/'>,
+    RouteId extends AppRouteId | string | null = AppRouteId | string | null
+    // @ts-ignore relax the route_id when integrating with libraries
+> = Omit<RequestEvent<any, RouteId>, 'params' | 'route'> & {
     cookies: Cookies;
     params: Params;
     route: { id: RouteId };
@@ -40,8 +46,8 @@ export type MiddlewareInput<
  * Returning `undefined` is allowed (no changes).
  */
 export type MiddlewareFunction<
-    Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
-    RouteId extends string | null = string | null,
+    Params extends AppLayoutParams<'/'> = AppLayoutParams<'/'>,
+    RouteId extends AppRouteId | string | null = AppRouteId | string | null,
     Context = any
 > = (event: MiddlewareInput<Params, RouteId>) => MaybePromise<Context | void | undefined>;
 
@@ -49,8 +55,8 @@ export type MiddlewareFunction<
  * Final handler that receives the merged guard object on `event.guard`.
  */
 export type MiddlewareServiceHandler<
-    Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
-    RouteId extends string | null = string | null,
+    Params extends AppLayoutParams<'/'> = AppLayoutParams<'/'>,
+    RouteId extends AppRouteId | string | null = AppRouteId | string | null,
     Context = any
 > = (event: ServiceRequestEvent<Params, RouteId> & {
     /**
@@ -115,8 +121,8 @@ const handleMiddlewareError = async (err: unknown, input: { errorHandlers: Middl
  * If any middleware throws/returns a Response via error handling, the pipeline short-circuits.
  */
 export const middleware = <
-    Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
-    RouteId extends string | null = string | null,
+    Params extends AppLayoutParams<'/'> = AppLayoutParams<'/'>,
+    RouteId extends AppRouteId | string | null = AppRouteId | string | null,
     Functions extends MiddlewareFunction<Params, RouteId, object>[] = MiddlewareFunction<Params, RouteId, object>[],
     FunctionReturns extends Awaited<ConcatReturnTypes<Functions>> = Awaited<ConcatReturnTypes<Functions>>
 >(
