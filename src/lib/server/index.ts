@@ -925,6 +925,7 @@ export class ServiceRouter {
  */
 export class ServiceManager {
     private static readonly instance = new ServiceManager();
+    private static anonAccessKeyCounter = 0;
     private readonly services = new Map<string, Service>();
     private readonly loadingPromises = new Map<string, Promise<void>>();
 
@@ -1160,8 +1161,12 @@ export class ServiceManager {
     ): ServiceEndpoint {
         const instance = ServiceManager.instance;
 
-        // A stable key so HMR recreations don't create disconnected allowlists
-        const key = options?.accessKey ?? 'default';
+        // Each call site gets its own isolated allowlist unless it opts into sharing
+        // by passing an explicit accessKey. A shared literal default here previously
+        // caused unrelated Base() calls (e.g. the services gateway and the .well-known
+        // gateway) to clobber each other's access() list, since access() clears the
+        // whole Set before repopulating it.
+        const key = options?.accessKey ?? `__anon_${ServiceManager.anonAccessKeyCounter++}`;
 
         // IMPORTANT: not a closure Set — it lives on the singleton
         const accessList = instance.getAccessList(key);
