@@ -1,3 +1,10 @@
+## [2.0.6](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v2.0.5...v2.0.6) (2026-07-09)
+
+
+### Bug Fixes
+
+* align middleware generics with sveltekit-enhance for interop ([d994347](https://github.com/SourceRegistry/sveltekit-service-manager/commit/d99434766028ae905995f4acfabfb95164f89e59))
+
 ## [2.0.5](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v2.0.4...v2.0.5) (2026-06-23)
 
 
