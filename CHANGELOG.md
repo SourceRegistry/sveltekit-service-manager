@@ -1,3 +1,10 @@
+## [2.0.7](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v2.0.6...v2.0.7) (2026-07-13)
+
+
+### Bug Fixes
+
+* access collision on routes ([5061389](https://github.com/SourceRegistry/sveltekit-service-manager/commit/5061389b25da7acaea8d4d4a78296f5c9dfd1c5d))
+
 ## [2.0.6](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v2.0.5...v2.0.6) (2026-07-09)
 
 
