@@ -914,6 +914,70 @@ export class ServiceRouter {
     static New(): ServiceRouter {
         return new ServiceRouter();
     }
+
+
+    static Local(): { router: ServiceRouter; endpoint: Record<RequestMethods, RequestHandler> } {
+        const router = new ServiceRouter();
+        const handle: RequestHandler = async (event) => {
+            try {
+
+                const requestedFullPath = event.url.pathname.split('/').filter(Boolean);
+
+                // Derive base/catch positions from route id segments (keeps compatibility with your current approach)
+                const routeId =
+                    event.route.id
+                        ?.split('/')
+                        .filter(Boolean)
+                        .filter((e) => !(e.startsWith('(') && e.endsWith(')'))) ?? [];
+
+                const catchAllIndex = routeId.findIndex((segment) => segment.startsWith('[...'));
+                if (catchAllIndex === -1) {
+                    throw new Error('Route must have a catch-all segment [...] at the end');
+                }
+
+                const basePathParts = requestedFullPath.slice(0, catchAllIndex);
+                const basePath = '/' + (basePathParts.length > 0 ? basePathParts.join('/') : '');
+
+                const servicePathParts = requestedFullPath.slice(catchAllIndex);
+                const servicePath = servicePathParts.length > 0 ? '/' + servicePathParts.join('/') : '/';
+
+                const serviceURL = new URL(event.url);
+                serviceURL.pathname = servicePath;
+
+                return await router.handle({
+                    ...event,
+                    url: serviceURL,
+                    route: {
+                        ...event.route,
+                        service: servicePath,
+                        base: basePath,
+                        serviceURL,
+                        baseURL: new URL(basePath, event.url),
+                        originalURL: new URL(event.url)
+                    }
+                } as ServiceRequestEvent)
+            } catch (err) {
+                if (err instanceof ServiceError) throw error(err.status, {message: err.message});
+                throw err;
+            }
+        };
+
+        const endpoint: Record<RequestMethods, RequestHandler> = {
+            GET: handle,
+            PUT: handle,
+            POST: handle,
+            DELETE: handle,
+            HEAD: handle,
+            PATCH: handle,
+            OPTIONS: handle
+        };
+
+        return {
+            router,
+            endpoint
+        }
+    }
+
 }
 
 /**
