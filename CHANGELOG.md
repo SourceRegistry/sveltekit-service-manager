@@ -1,3 +1,10 @@
+# [2.1.0](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v2.0.7...v2.1.0) (2026-07-21)
+
+
+### Features
+
+* **router:** add ServiceRouter.Local() for catch-all-mounted routers ([fd12630](https://github.com/SourceRegistry/sveltekit-service-manager/commit/fd12630dda04f056b74f3ed80332f47b2caf21d7))
+
 ## [2.0.7](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v2.0.6...v2.0.7) (2026-07-13)
 
 
