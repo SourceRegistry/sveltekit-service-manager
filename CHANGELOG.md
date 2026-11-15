@@ -1,3 +1,20 @@
+# [3.0.0](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v2.1.0...v3.0.0) (2026-11-15)
+
+
+* feat!: migrate to SvelteKit 3 ([e1383c9](https://github.com/SourceRegistry/sveltekit-service-manager/commit/e1383c9ae3c8712a77de6cd3b83bb1294e119143)), closes [#lib](https://github.com/SourceRegistry/sveltekit-service-manager/issues/lib)
+
+
+### BREAKING CHANGES
+
+* requires @sveltejs/kit ^3.0.0, svelte ^5.57.1 and
+Node >=22.17. @sveltejs/kit is now a declared peer dependency.
+PUBLIC_SERVICE_ENTRYPOINT must be declared (public: true) in the
+consuming app's src/env.ts, otherwise the client falls back to
+/api/v1/services. HttpError responses from the standalone Server now
+include `status` in the JSON body, following Kit 3's App.Error shape.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
 # [2.1.0](https://github.com/SourceRegistry/sveltekit-service-manager/compare/v2.0.7...v2.1.0) (2026-07-21)
 
 
