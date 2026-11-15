@@ -1,4 +1,8 @@
-import {env} from "$env/dynamic/public";
+import * as public_env from "$app/env/public";
+
+// SvelteKit 3 only exposes env vars declared in the app's `src/env.ts`.
+// Consumers that want to override the entrypoint declare `PUBLIC_SERVICE_ENTRYPOINT` there with `public: true`.
+const env = public_env as Record<string, string | undefined>;
 
 export type PublicServices = {
     [K in keyof App.Services]: 'route' extends keyof App.Services[K] ? K : never;
@@ -64,7 +68,7 @@ export const Service = (service: PublicServices, config: Partial<{
     entryPoint: string,
     url: URL
     executor: typeof fetch,
-    params: import("@sveltejs/kit").Page['params']
+    params: import("$app/state").Page['params']
 }> = {}) => {
     let {entryPoint = publicBaseEntryPoint, executor = fetch} = config;
     if (entryPoint.includes("[")) {

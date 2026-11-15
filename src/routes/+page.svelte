@@ -1,5 +1,5 @@
 <script>
-import {Service} from "$lib/client/index.js";
+import {Service} from "#lib/client/index.js";
 </script>
 
 <h1>

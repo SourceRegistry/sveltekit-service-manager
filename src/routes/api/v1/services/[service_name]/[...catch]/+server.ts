@@ -1,4 +1,4 @@
-import { ServiceManager } from '$lib/server/index.js'; //IMPORTANT Use: @sourceregistry/svelte-service-manager in production.
+import { ServiceManager } from '#lib/server/index.js'; //IMPORTANT Use: @sourceregistry/svelte-service-manager in production.
 
 const { endpoint, access } = ServiceManager.Base();
 

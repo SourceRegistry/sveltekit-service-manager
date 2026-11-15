@@ -2,10 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { error as skError, redirect as skRedirect } from "@sveltejs/kit";
 
 // ✅ IMPORTANT: mock SvelteKit public env import used by client module
-vi.mock("$env/dynamic/public", () => ({
-    env: {
-        PUBLIC_SERVICE_ENTRYPOINT: "/api/v1/services"
-    }
+vi.mock("$app/env/public", () => ({
+    PUBLIC_SERVICE_ENTRYPOINT: "/api/v1/services"
 }));
 
 import {
@@ -979,7 +977,7 @@ describe("WebHTTPServer (Server)", () => {
 
             const failRes = await fetch(`${base}/fail`);
             expect(failRes.status).toBe(400);
-            expect(await failRes.json()).toEqual({ message: "bad" });
+            expect(await failRes.json()).toEqual({ status: 400, message: "bad" });
 
             const redirectRes = await fetch(`${base}/go`, { redirect: "manual" });
             expect(redirectRes.status).toBe(302);

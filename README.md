@@ -24,9 +24,9 @@ Expose modular backend services through versioned SvelteKit gateway routes. Keep
 npm install @sourceregistry/sveltekit-service-manager
 ```
 
-**Peer dependency:** `svelte ^5.0.0`
+**Peer dependencies:** `@sveltejs/kit ^3.0.0`, `svelte ^5.57.1` (Node `>=22.17`)
 
-In this repository examples may import from `$lib/server/index.js`. In applications, import from `@sourceregistry/sveltekit-service-manager`.
+In this repository examples may import from `#lib/server/index.js`. In applications, import from `@sourceregistry/sveltekit-service-manager`.
 
 ---
 
@@ -245,6 +245,16 @@ const ping = Service('ping', {
 ```
 
 Entrypoints with `[param]` or `[...param]` placeholders are resolved from `config.params`.
+
+The default entrypoint is `/api/v1/services`. To change it globally, declare `PUBLIC_SERVICE_ENTRYPOINT` in your app's `src/env.ts` (SvelteKit 3 only exposes declared variables):
+
+```ts
+import { defineEnvVars } from '@sveltejs/kit/env';
+
+export const variables = defineEnvVars({
+    PUBLIC_SERVICE_ENTRYPOINT: { public: true, schema: (value) => value }
+});
+```
 
 ### `ServiceError`
 

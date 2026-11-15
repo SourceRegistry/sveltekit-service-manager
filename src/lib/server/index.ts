@@ -8,9 +8,9 @@ import {
 } from '@sveltejs/kit';
 
 import {stringify} from 'devalue';
-import {WebHTTPServer} from '$lib/server/helpers/WebHTTPServer.js';
-import {WebProxyServer} from '$lib/server/helpers/WebProxyServer.js';
-import {middleware as mWare} from '$lib/server/helpers/middleware.js';
+import {WebHTTPServer} from './helpers/WebHTTPServer.js';
+import {WebProxyServer} from './helpers/WebProxyServer.js';
+import {middleware as mWare} from './helpers/middleware.js';
 
 type MaybePromise<T> = T | Promise<T>;
 

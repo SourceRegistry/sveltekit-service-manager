@@ -25,6 +25,9 @@
 		"**/*.css"
 	],
 	"type": "module",
+	"imports": {
+		"#lib/*": "./src/lib/*"
+	},
 	"exports": {
 		".": {
 			"types": "./dist/server/index.d.ts",
@@ -40,7 +43,8 @@
 		}
 	},
 	"peerDependencies": {
-		"svelte": "^5.0.0"
+		"@sveltejs/kit": "^3.0.0",
+		"svelte": "^5.57.1"
 	},
 	"devDependencies": {
 		"@semantic-release/changelog": "6.0.3",
@@ -48,17 +52,17 @@
 		"@semantic-release/git": "10.0.1",
 		"@semantic-release/npm": "13.1.5",
 		"@semantic-release/release-notes-generator": "14.1.1",
-		"@sveltejs/adapter-auto": "7.0.1",
-		"@sveltejs/kit": "2.60.1",
-		"@sveltejs/package": "2.5.7",
-		"@sveltejs/vite-plugin-svelte": "7.1.2",
+		"@sveltejs/adapter-auto": "8.0.1",
+		"@sveltejs/kit": "3.2.0",
+		"@sveltejs/package": "3.0.2",
+		"@sveltejs/vite-plugin-svelte": "7.3.1",
 		"@types/node": "25.8.0",
 		"@vitest/browser-playwright": "4.1.6",
 		"@vitest/coverage-v8": "4.1.6",
 		"playwright": "1.60.0",
 		"publint": "0.3.21",
-		"svelte": "5.55.7",
-		"svelte-check": "4.4.8",
+		"svelte": "5.57.3",
+		"svelte-check": "4.7.8",
 		"typedoc": "0.28.19",
 		"typescript": "6.0.3",
 		"vite": "8.0.13",
@@ -87,7 +91,7 @@
 		"access": "public"
 	},
 	"engines": {
-		"node": "^20.19.0 || ^22.12.0 || >=24.0.0"
+		"node": ">=22.17"
 	},
 	"release": {
 		"branches": [
@@ -111,10 +115,10 @@
 		]
 	},
 	"dependencies": {
-		"cookie": "1.1.1"
+		"cookie": "2.0.2"
 	},
 	"overrides": {
-		"cookie": "1.1.1",
+		"cookie": "2.0.2",
 		"npm": "11.14.1"
 	}
 }

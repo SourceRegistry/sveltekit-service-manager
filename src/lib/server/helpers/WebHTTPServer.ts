@@ -31,7 +31,7 @@ export class Cookies implements SVCookie {
         options?: cookie.ParseOptions
     ) {
         const cookieHeader = request.headers.get('cookie') ?? '';
-        this.requestCookies = cookie.parse(cookieHeader, options);
+        this.requestCookies = cookie.parseCookie(cookieHeader, options);
         this.setCookieHeader = setCookieHeader;
     }
 
@@ -45,16 +45,20 @@ export class Cookies implements SVCookie {
             .map(([name, value]) => ({ name, value }));
     }
 
-    set(name: string, value: string, opts: cookie.SerializeOptions & { path: string }): void {
+    set(name: string, value: string, opts: cookie.SerializeOptions = {}): void {
         this.setCookieHeader(name, value, opts);
     }
 
-    delete(name: string, opts: cookie.SerializeOptions & { path: string }): void {
+    delete(name: string, opts: cookie.SerializeOptions = {}): void {
         this.set(name, '', { ...opts, maxAge: 0 });
     }
 
-    serialize(name: string, value: string, opts: cookie.SerializeOptions & { path: string }): string {
-        return cookie.serialize(name, value, opts);
+    parse(str: string, options?: cookie.ParseOptions): cookie.SetCookie {
+        return cookie.parseSetCookie(str, options);
+    }
+
+    serialize(name: string, value: string, opts: cookie.SerializeOptions = {}): string {
+        return cookie.stringifySetCookie({ path: '/', ...opts, name, value }, opts);
     }
 }
 
@@ -379,12 +383,15 @@ export class WebHTTPServer<TServerConfig extends ServerConfig = HttpServerConfig
     ): RequestEvent<{}, null> {
         const requestUrl = new URL(request.url);
         const cookieSetter = (name: string, value: string, opts: cookie.SerializeOptions) => {
-            const serialized = cookie.serialize(name, value, {
+            const serialized = cookie.stringifySetCookie({
+                path: '/',
                 httpOnly: true,
                 sameSite: 'lax',
                 secure: !['localhost', '127.0.0.1', '::1', '[::1]'].includes(requestUrl.hostname),
-                ...opts
-            });
+                ...opts,
+                name,
+                value
+            }, opts);
             utils.pushSetCookie(serialized);
         };
 

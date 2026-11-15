@@ -1,4 +1,4 @@
-import {Router, type Service, ServiceManager} from "$lib/index.js";
+import {Router, type Service, ServiceManager} from "#lib/index.js";
 
 const router = Router();
 
