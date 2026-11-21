@@ -1077,7 +1077,7 @@ describe("WebProxyServer (Proxy)", () => {
         expect(proxy.listen()).toBe(proxy);
         expect(proxy.ref()).toBe(proxy);
         expect(proxy.unref()).toBe(proxy);
-        expect(proxy[Symbol.asyncDispose]()).resolves.toBeUndefined();
+        await expect(proxy[Symbol.asyncDispose]()).resolves.toBeUndefined();
         proxy.closeAllConnections();
         proxy.closeIdleConnections();
         expect(upgrade).toHaveBeenCalled();
